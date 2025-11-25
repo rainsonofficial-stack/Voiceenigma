@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>OS | AOD Discreet Magic</title>
     
-    <!-- PWA MANIFEST LINK (NEW) -->
+    <!-- PWA MANIFEST LINK -->
     <link rel="manifest" href="./manifest.json">
     
-    <!-- EXTERNAL DICTIONARY: Assumed to define global variable LARGE_DICTIONARY -->
-    <script src="https://raw.githubusercontent.com/rainsonofficial-stack/Enigma/cc82d64bbabae322cc5119fbe85dd16727c39fd6/large_dictionary.js"></script>
+    <!-- LOCAL DICTIONARY SOURCE -->
+    <script src="./large_dictionary.js"></script>
 
     <style>
         /* AOD Styling (Dark, Minimal, Discreet) */
@@ -211,7 +211,7 @@
     </div>
     
     <script>
-        // Global variable LARGE_DICTIONARY is defined by the external script tag above.
+        // Global variable LARGE_DICTIONARY is now defined by the local large_dictionary.js file.
         
         const APP = {
             // Configuration
@@ -474,7 +474,7 @@
                 const [d1, d2, d3] = numbers;
                 
                 if (typeof LARGE_DICTIONARY === 'undefined') { 
-                    this.logStatus("Dictionary not loaded.", true); 
+                    this.logStatus("Dictionary not loaded. (FATAL)", true); 
                     return; 
                 }
 
@@ -513,6 +513,7 @@
                 const magicLetter = spokenWord[0].toUpperCase();
                 const pos = this.CURRENT_POSITION_INDEX - 1; // 0-based index
 
+                // MATCHES are already guaranteed to be uppercase from the filterDictionary step
                 const filtered = this.MATCHES.filter(word => 
                     word.length > pos && word[pos] === magicLetter
                 );
@@ -539,7 +540,8 @@
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     notifText.innerHTML = `Sohan wants <span class="final-word-placeholder">${finalWord}</span> to...`;
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
-                    const displayWords = this.MATCHES.slice(0, 4).join(', ');
+                    // Display the words, converting them back to lowercase for the discreet "shopping list" look
+                    const displayWords = this.MATCHES.slice(0, 4).map(w => w.toLowerCase()).join(', ');
                     const moreText = this.MATCHES.length > 4 ? ` (+${this.MATCHES.length - 4})` : '';
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
@@ -598,7 +600,7 @@
                 this.logStatus("App reset to AOD_LOCK state.");
             },
             
-            // --- PWA Service Worker Registration (NEW) ---
+            // --- PWA Service Worker Registration ---
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
