@@ -231,8 +231,8 @@
             PASSCODE_LENGTH: 4,
             DOUBLE_TAP_THRESHOLD: 300, 
             LAST_TAP_TIME: 0,
-            RESTART_DELAY_MS: 50, 
-            TRANSCRIPT_DISPLAY_DURATION: 2000, // 2 seconds to show failed transcript
+            RESTART_DELAY_MS: 100, 
+            TRANSCRIPT_DISPLAY_DURATION: 2000, 
             
             // State Variables
             APP_STATE: 'AOD_LOCK', 
@@ -344,10 +344,10 @@
                     notifIcon.classList.remove('listening-active'); // Stops pulse animation
                 }
                 
-                // If the app is in its initial or failed state, always show the default gear/text
-                if (this.APP_STATE === 'AOD_LOCK' || this.MATCHES.length === 0) {
+                // Always ensure the gear icon is present when in the initial/listening state
+                if (this.APP_STATE === 'AOD_LOCK' || this.APP_STATE === 'AOD_LISTENING') {
                      document.getElementById('notif-icon').innerHTML = this.ICON_GEAR_SVG;
-                     // Text update handled by updateNotification('INITIAL') or ('NO_MATCHES')
+                     document.getElementById('notif-text').textContent = "System Update Available";
                 }
                 // Word list and final states are handled exclusively by updateNotification.
             },
@@ -518,14 +518,12 @@
                 }
 
                 if (d4 === 0 || numbers.length !== 3) {
-                    this.logStatus(`Initial passcode failed to process. Retrying listening loop.`);
+                    // SCENARIO 1: PARSING FAILED (e.g., "hello") - SILENT ERROR
+                    this.logStatus(`Initial passcode failed to parse: "${transcript}". Reverting to initial state.`);
                     
-                    this.showFailedTranscript(transcript);
-
-                    // Must re-start listening after showing the error transcript
-                    setTimeout(() => {
-                        this.startListening();
-                    }, this.TRANSCRIPT_DISPLAY_DURATION);
+                    // Immediately revert UI to default and restart listening
+                    this.updateNotification('INITIAL'); 
+                    this.startListening();
                     return; 
                 }
                 
@@ -541,8 +539,8 @@
                 const matches = this.filterDictionary(d1, d2, d3, d4, LARGE_DICTIONARY);
 
                 if (matches.length === 0) {
+                    // SCENARIO 2: FILTERING FAILED (0 matches) - SHOW "Update not available"
                     this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listening.");
-                    // --- NEW BEHAVIOR: 0 matches should display an error and keep mic on ---
                     this.updateNotification('NO_MATCHES'); 
                     return; 
                 }
@@ -591,9 +589,10 @@
                 );
 
                 if (filtered.length === 0) {
+                    // Letter filter failed - Revert to previous list and keep listening
                     this.logStatus(`Filter failed: Letter '${magicLetter}' yielded 0 matches. Reverting to previous list and re-starting.`);
-                    this.showFailedTranscript(transcript);
-                    setTimeout(() => this.checkMatchesAndProceed(), this.TRANSCRIPT_DISPLAY_DURATION);
+                    // We don't need to do a timeout here, just continue the current match list and re-start the mic.
+                    this.checkMatchesAndProceed(); 
                     return;
                 }
 
@@ -605,17 +604,6 @@
             },
 
             // --- State and UI Update ---
-            showFailedTranscript(transcript) {
-                const notifIcon = document.getElementById('notif-icon');
-                const notifText = document.getElementById('notif-text');
-                
-                // Temporarily show the microphone icon for the error message
-                notifIcon.innerHTML = this.ICON_GEAR_SVG; 
-                notifIcon.classList.remove('listening-active');
-
-                // Show the transcript that failed to parse
-                notifText.innerHTML = `<span style="color: #F8F8F8; font-weight: 700;">DIDN'T PARSE:</span> ${transcript.toLowerCase()}`;
-            },
 
             updateNotification(status) {
                 const notifIcon = document.getElementById('notif-icon');
@@ -623,7 +611,7 @@
                 const currentSecond = document.getElementById('current-second');
                 
                 // Stop the pulse when updating to a definite state
-                if (status === 'FINAL' || status === 'INITIAL' || status === 'NO_MATCHES') {
+                if (status === 'FINAL') {
                     notifIcon.classList.remove('listening-active');
                 }
 
@@ -644,23 +632,28 @@
                     notifText.innerHTML = `To buy: ${displayWords}${moreText}`;
                     currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     
-                    this.startListening(); // Re-engages the mic loop and pulse
+                    this.startListening(); 
 
                 } else if (status === 'NO_MATCHES') {
                     // Code failed to find any matches. Show error and keep mic on.
                     this.APP_STATE = 'AOD_LISTENING'; // Stay in the listening state
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
-                    notifText.textContent = "Update not available";
+                    notifText.textContent = "Update not available"; // <-- TEXT CHANGE
                     currentSecond.textContent = '00';
                     
-                    this.startListening(); // Keeps mic active for next attempt
+                    this.startListening(); 
 
                 } else if (status === 'INITIAL') {
-                    // Default reset to lock screen.
-                    this.APP_STATE = 'AOD_LOCK';
+                    // Default reset to lock screen, or silent reset after parsing failure.
+                    this.APP_STATE = this.isListening ? 'AOD_LISTENING' : 'AOD_LOCK';
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
-                    notifText.textContent = "System Update Available";
+                    notifText.textContent = "System Update Available"; // <-- TEXT CHANGE
                     currentSecond.textContent = '00';
+                    
+                    // If we are resetting mid-listening loop (e.g. after a parse failure), ensure pulse is active
+                    if (this.APP_STATE === 'AOD_LISTENING') {
+                        notifIcon.classList.add('listening-active');
+                    }
                 }
             },
 
@@ -668,7 +661,7 @@
                 
                 if (this.MATCHES.length === 1) {
                     this.APP_STATE = 'AOD_DISPLAY_FINAL';
-                    this.updateNotification('FINAL'); // Stops mic
+                    this.updateNotification('FINAL'); // Stops mic permanently
                     
                 } else if (this.MATCHES.length > 1) {
                     const bestIndex = this.getDisambiguationIndex(this.MATCHES);
@@ -704,8 +697,6 @@
                     this.logStatus("App reset to AOD_LOCK state.");
                 } else {
                     this.APP_STATE = 'AOD_LISTENING';
-                    // We call updateNotification('INITIAL') just to set the text/icon to default 
-                    // without stopping the mic loop, which is started immediately after this call chain.
                     this.updateNotification('INITIAL'); 
                     this.logStatus("App state cleared, ready for new voice input.");
                 }
