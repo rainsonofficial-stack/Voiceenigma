@@ -63,7 +63,7 @@
             background: #282a2d; 
             border-radius: 6px; 
             display: flex;
-            align-items: center; /* FIX: Vertical Center Alignment */
+            align-items: center; /* Vertical Center Alignment */
             transition: opacity 0.5s;
             margin-top: 10px; 
             min-height: 30px; 
@@ -90,7 +90,7 @@
             line-height: 1.3;
             white-space: normal;
             flex-grow: 1;
-            text-align: center; /* FIX: Horizontal Center Alignment */
+            text-align: center; /* Horizontal Center Alignment */
         }
         
         /* Listening State Styles: Only the pulse animation remains visible */
@@ -409,7 +409,7 @@
                 return indices;
             },
 
-            // FIX: Reliable single-tap start (forces reload for clean mic start)
+            // Reliable single-tap start (forces reload for clean mic start)
             handleSingleTap(event) {
                 event.preventDefault(); 
                 // As requested, if the mic is not listening (likely stuck after app closure/reopen), force a page reload.
@@ -422,7 +422,7 @@
                 }
             },
 
-            // FIX: Master reset on double-tap
+            // Master reset on double-tap
             handleDoubleTap(event) {
                 event.preventDefault(); 
                 this.logStatus("Double Tap: Master Reset.");
@@ -457,14 +457,16 @@
                 });
             },
             
-            // Finds the position with the ABSOLUTE maximum number of unique letters
+            // FIX: Corrected function to ensure it finds the ABSOLUTE maximum number of unique letters
             getDisambiguationIndex(matches) {
-                if (matches.length <= 1) return -1;
-                const minLength = Math.min(...matches.map(w => w.length));
-                let bestIndex = 0; // 0 means no position found (or max unique is 1)
-                let maxUniqueLetters = 1; 
+                if (matches.length <= 1) return 0; // Return 0 if 1 or 0 matches
                 
-                // Iterate through all possible positions up to the shortest word length
+                // Determine the minimum length among all matched words
+                const minLength = Math.min(...matches.map(w => w.length));
+                let bestIndex = 0; // 1-based index of the best position, default 0
+                let maxUniqueLetters = 0; // Initialize to 0
+
+                // Check every position up to the minimum length of all matched words
                 for (let i = 0; i < minLength; i++) {   
                     const lettersAtPosition = matches
                         .map(word => word.length > i ? word[i] : null)
@@ -472,14 +474,16 @@
                     
                     const uniqueCount = new Set(lettersAtPosition).size;
 
-                    // Only update if the current position is strictly better than the maximum found so far
+                    // Update if the current position has strictly MORE unique letters
+                    // Note: If multiple positions have the same maximum count, the first one found (the lower index) will be chosen, which is generally fine.
                     if (uniqueCount > maxUniqueLetters) { 
                         maxUniqueLetters = uniqueCount;
                         bestIndex = i + 1; // 1-based index
                     }
                     
-                    // Optimization: If we hit 3 unique letters, we can stop early, as this is enough ambiguity
-                    if (maxUniqueLetters >= 3) break; 
+                    // CRITICAL FIX: Removed the premature break condition 
+                    // (if (maxUniqueLetters >= 3) break;) to ensure we check ALL positions
+                    // to find the absolute maximum (e.g., 5 distinct letters)
                 }
 
                 return bestIndex;
