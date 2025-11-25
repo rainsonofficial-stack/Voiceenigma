@@ -1,9 +1,8 @@
-const CACHE_NAME = 'aod-magic-cache-v1';
+const CACHE_NAME = 'aod-magic-cache-v3'; // Bumped cache version to force update of large_dictionary.js
 const urlsToCache = [
     './index.html',
     './manifest.json',
-    // The external dictionary file, essential for core functionality
-    'https://raw.githubusercontent.com/rainsonofficial-stack/Enigma/cc82d64bbabae322cc5119fbe85dd16727c39fd6/large_dictionary.js'
+    './large_dictionary.js' // Local dictionary file
     // Note: We are mocking the icons and assuming they exist in a real deployed environment
 ];
 
@@ -44,6 +43,7 @@ self.addEventListener('activate', (event) => {
         caches.keys().then((cacheNames) => {
             return Promise.all(
                 cacheNames.map((cacheName) => {
+                    // Delete old caches
                     if (cacheWhitelist.indexOf(cacheName) === -1) {
                         return caches.delete(cacheName);
                     }
@@ -52,3 +52,4 @@ self.addEventListener('activate', (event) => {
         })
     );
 });
+
