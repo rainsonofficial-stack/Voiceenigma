@@ -75,6 +75,11 @@
             flex-shrink: 0;
             transition: transform 0.5s;
         }
+        .final-word-placeholder {
+            color: #ffffff; 
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
         .notif-text {
             font-size: 13px;
             color: #d1d1d1;
@@ -82,13 +87,8 @@
             word-break: break-word; 
             line-height: 1.3;
         }
-        .final-word-placeholder {
-            color: #ffffff; 
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
         
-        /* New Listening State Styles: Only the pulse animation remains visible */
+        /* Listening State Styles: Only the pulse animation remains visible */
         .listening-active {
             animation: pulse-mic 1.5s infinite;
         }
@@ -183,7 +183,7 @@
 </head>
 <body>
     <div id="app">
-        <!-- Clock Widget (Double tap here to trigger voice input) -->
+        <!-- Clock Widget (Tap/Double tap here to trigger/reset voice input) -->
         <div class="time-display" id="aod-time"></div>
         <div class="date-display" id="aod-date"></div>
 
@@ -308,17 +308,25 @@
 
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
-                if (this.isListening) return; 
+                if (this.isListening) {
+                    this.logStatus("Attempted to start listening, but already active.");
+                    return;
+                }
 
                 this.isListening = true;
                 this.APP_STATE = 'AOD_LISTENING';
                 this.updateListeningUI(true); // Update UI to mic active state (pulsing gear)
                 try {
-                    // Try to stop any currently running session before starting
-                    this.recognizer.stop(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session.");
                 } catch (e) {
+                    // Check for common error codes that suggest an active session
+                    if (e.name === 'InvalidStateError') {
+                        this.logStatus("Recognizer is already active (InvalidStateError). Ignoring redundant start.", true);
+                        this.isListening = true; // Assume it is active
+                        this.updateListeningUI(true);
+                        return;
+                    }
                     this.logStatus(`Error starting recognition: ${e.message}`, true);
                     this.isListening = false;
                     this.updateListeningUI(false);
@@ -332,7 +340,7 @@
                 this.updateListeningUI(false); 
                 try {
                     this.recognizer.stop();
-                    this.logStatus("Stopped continuous listening.");
+                    this.logStatus("Stopped continuous listening permanently.");
                 } catch (e) {}
             },
 
@@ -344,12 +352,6 @@
                 } else {
                     notifIcon.classList.remove('listening-active'); // Stops pulse animation
                 }
-                
-                // Only use the gear icon/default text if we are in initial or listening state
-                if (this.APP_STATE === 'AOD_LOCK' || this.APP_STATE === 'AOD_LISTENING') {
-                     document.getElementById('notif-icon').innerHTML = this.ICON_GEAR_SVG;
-                }
-                // Text updates are handled by updateNotification to manage the different statuses (default vs. no match)
             },
 
             initVoiceRecognition() {
@@ -365,36 +367,33 @@
                 this.recognizer.interimResults = false;
                 this.recognizer.lang = 'en-US'; 
                 
-                this.recognizer.onstart = () => { this.logStatus("Recognizing..."); this.updateListeningUI(true);};
+                this.recognizer.onstart = () => { 
+                    this.logStatus("Recognizing..."); 
+                    this.updateListeningUI(true);
+                    this.isListening = true;
+                };
 
-                // Auto-restart logic (CRITICAL FIX FOR PERSISTENCE)
+                // Auto-restart logic (CRITICAL FIX FOR CONTINUOUS LISTENING)
                 this.recognizer.onend = () => {
-                    // If isListening is true, it means we want the mic to immediately restart
-                    if (this.isListening && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                        setTimeout(() => {
-                            if (this.isListening) {
-                                this.logStatus("Auto-restarting listening...");
-                                try {
-                                    this.recognizer.start();
-                                } catch (e) {
-                                    this.logStatus(`Restart error: ${e.message}`, true);
-                                    this.isListening = false; // Stop trying if error persists
-                                    this.updateListeningUI(false);
-                                }
-                            }
-                        }, this.RESTART_DELAY_MS); 
+                    this.isListening = false; // Recognizer has stopped
+
+                    // If the app is not in the final state, attempt to restart
+                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
+                        this.logStatus("Listening session ended (no result/timeout). Restarting...");
+                        setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
-                        this.logStatus("Listening ended normally/processed command or stopped permanently.");
+                        this.logStatus("Listening ended permanently (Final Word Found).");
                         this.updateListeningUI(false);
                     }
                 };
 
                 this.recognizer.onerror = (event) => {
                     this.logStatus(`Voice Error (${event.error}).`, true);
-                    
-                    if (event.error === 'network' || event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    // Fatal errors that require manual restart
+                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                         this.isListening = false;
                         this.updateListeningUI(false);
+                        this.APP_STATE = 'AOD_LOCK'; // Go back to lock state
                     }
                 };
                 
@@ -402,39 +401,59 @@
                     const transcript = event.results[0][0].transcript.toUpperCase().trim();
                     this.logStatus(`RAW Transcript received: "${transcript}"`);
                     
-                    // Crucial: Set isListening to false so onend doesn't trigger a restart *until*
-                    // the handler explicitly calls startListening() again after processing.
-                    this.isListening = false; 
-                    this.recognizer.stop(); 
+                    // The continuous loop is now handled by onend. We just process the result here.
                     
                     if (this.MATCHES.length === 0) {
                         this.handleInitialPasscode(transcript);
                     } else {
                         this.handleLetterInput(transcript);
                     }
+                    
+                    // Do NOT call startListening() here. The implicit end of recognition will fire onend, 
+                    // which handles the restart if APP_STATE is not FINAL.
                 };
             },
             
-            // --- Double Tap Handler ---
-            handleDoubleTap(event) {
+            // --- Tap Handler (Handles single and double tap) ---
+            handleTap(event) {
                 const target = event.target.closest('#aod-time'); 
                 if (!target) return;
+                
+                // Prevent scrolling/zooming on mobile
+                event.preventDefault(); 
 
                 const currentTime = new Date().getTime();
                 const timeSinceLastTap = currentTime - this.LAST_TAP_TIME;
-                this.LAST_TAP_TIME = currentTime;
-
-                if (timeSinceLastTap < this.DOUBLE_TAP_THRESHOLD) {
-                    event.preventDefault(); 
+                
+                if (timeSinceLastTap < this.DOUBLE_TAP_THRESHOLD && timeSinceLastTap > 0) {
+                    // --- DOUBLE TAP CONFIRMED (MASTER RESET & START) ---
+                    this.LAST_TAP_TIME = 0; // Reset tap time immediately
                     
-                    // Point 4 Fix: Allow tap from AOD_LOCK or AOD_DISPLAY_FINAL (resetting everything)
                     if (this.APP_STATE === 'AOD_LOCK' || this.APP_STATE === 'AOD_DISPLAY_FINAL') {
-                        this.resetApp(false); // Reset state but *don't* return to locked UI state
-                        if (this.recognizer) {
-                            this.startListening();
+                        this.logStatus("Double Tap: Master Reset and starting fresh.");
+                        this.resetApp(false); 
+                        this.startListening();
+                    } else {
+                        this.logStatus("Double Tap ignored: Already active/not in terminal state.");
+                    }
+                    
+                } else {
+                    // --- SINGLE TAP (OR START OF DOUBLE TAP) ---
+                    this.LAST_TAP_TIME = currentTime;
+
+                    // Issue 2 Fix: Single tap to activate mic if off
+                    if (!this.isListening) {
+                        this.logStatus("Single Tap: Manually starting mic.");
+                        this.resetApp(false); // Clear old state, but don't reset UI to lock
+                        this.startListening();
+                    }
+                    
+                    // Timeout to reset LAST_TAP_TIME if no second tap follows
+                    setTimeout(() => {
+                        if (this.LAST_TAP_TIME === currentTime) {
                             this.LAST_TAP_TIME = 0; 
                         }
-                    } 
+                    }, this.DOUBLE_TAP_THRESHOLD);
                 }
             },
 
@@ -523,11 +542,8 @@
                 if (d4 === 0 || numbers.length !== 3) {
                     // SCENARIO 1: PARSING FAILED (e.g., "hello") - SILENT RECOVERY (reverts to default)
                     this.logStatus(`Initial passcode failed to parse: "${transcript}". Silently recovering.`);
-                    
-                    // Revert UI to default "System Update Available" and keep mic on
                     this.updateNotification('INITIAL'); 
-                    this.startListening();
-                    return; 
+                    return; // onend handles the restart
                 }
                 
                 const [d1, d2, d3] = numbers;
@@ -543,9 +559,9 @@
 
                 if (matches.length === 0) {
                     // SCENARIO 2: FILTERING FAILED (0 matches) - SHOW "Update not available"
-                    this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listening.");
+                    this.logStatus("Code filtered to 0 matches. Displaying 'Update not available'.");
                     this.updateNotification('NO_MATCHES'); 
-                    return; 
+                    return; // onend handles the restart
                 }
 
                 this.HISTORY = []; 
@@ -558,30 +574,25 @@
             },
             
             handleLetterInput(transcript) {
-                // Mic is already marked as stopped from onresult
-                
                 if (this.MATCHES.length <= 1) {
-                    // Safety net: if it's already solved, just restart the mic and ignore input
-                    this.startListening(); 
-                    return;
+                    this.logStatus("Ignoring letter input, solution already found.");
+                    return; // onend handles the restart
                 }
                 
                 const trigger = "INTERESTING";
                 const triggerIndex = transcript.indexOf(trigger);
                 
                 if (triggerIndex === -1) {
-                    this.logStatus("No 'interesting' trigger. Re-starting listening.");
-                    this.startListening(); 
-                    return;
+                    this.logStatus("No 'interesting' trigger. Ignoring input.");
+                    return; // onend handles the restart
                 }
                 
                 const preTrigger = transcript.substring(0, triggerIndex).trim();
                 const preWords = preTrigger.split(' ').filter(w => w.length > 0);
                 
                 if (preWords.length === 0) {
-                    this.logStatus("No word found before 'interesting'. Re-starting listening.");
-                    this.startListening(); 
-                    return;
+                    this.logStatus("No word found before 'interesting'. Ignoring input.");
+                    return; // onend handles the restart
                 }
                 
                 const spokenWord = preWords[preWords.length - 1];
@@ -595,8 +606,8 @@
                 if (filtered.length === 0) {
                     // Letter filter failed - Revert to previous list (this.MATCHES remains unchanged) and keep listening
                     this.logStatus(`Filter failed: Letter '${magicLetter}' yielded 0 matches. Staying on current list.`);
-                    this.checkMatchesAndProceed(); 
-                    return;
+                    this.updateNotification('WORD_LIST'); // Re-display the old list
+                    return; // onend handles the restart
                 }
 
                 this.HISTORY.push(filtered);
@@ -622,7 +633,7 @@
                     currentSecond.textContent = '00';
                     
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
-                    // SUCCESS PATH: Display word list and restart mic
+                    // SUCCESS PATH: Display word list 
                     this.APP_STATE = 'AOD_LISTENING';
                     const displayWords = this.MATCHES.slice(0, 4).map(w => w.toLowerCase()).join(', ');
                     const moreText = this.MATCHES.length > 4 ? ` (+${this.MATCHES.length - 4})` : '';
@@ -630,8 +641,7 @@
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; // Use chat icon for word list
                     notifText.innerHTML = `To buy: ${displayWords}${moreText}`;
                     currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
-                    
-                    this.startListening(); 
+                    this.updateListeningUI(true); // Ensure pulse is active
 
                 } else if (status === 'NO_MATCHES') {
                     // SCENARIO 2 PATH: Valid code, 0 matches. Display error text, and keep mic on.
@@ -639,20 +649,20 @@
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "Update not available"; 
                     currentSecond.textContent = '00';
-                    
-                    this.startListening(); 
+                    this.updateListeningUI(true); // Ensure pulse is active
 
                 } else if (status === 'INITIAL') {
-                    // DEFAULT PATH: Default text or silent recovery (mic state is set by caller)
-                    this.APP_STATE = this.isListening ? 'AOD_LISTENING' : 'AOD_LOCK';
+                    // DEFAULT PATH/SILENT RECOVERY: Displays default text, mic state managed by onend/tap.
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "System Update Available"; 
                     currentSecond.textContent = '00';
                     
-                    if (this.APP_STATE === 'AOD_LISTENING') {
-                        notifIcon.classList.add('listening-active');
+                    if (!this.isListening) {
+                        this.APP_STATE = 'AOD_LOCK';
+                        this.updateListeningUI(false); 
                     } else {
-                        notifIcon.classList.remove('listening-active');
+                        this.APP_STATE = 'AOD_LISTENING';
+                        this.updateListeningUI(true);
                     }
                 }
             },
@@ -677,7 +687,7 @@
                     // Update Music Player (0:XX)
                     document.getElementById('current-second').textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     
-                    this.updateNotification('WORD_LIST'); // Displays list and restarts mic
+                    this.updateNotification('WORD_LIST'); // Displays list and ensures mic pulse is active
                     
                 } else {
                     // Fallback for 0 matches (should be caught earlier)
@@ -690,8 +700,10 @@
                 if (returnToLock) {
                     this.stopListening();
                 } else {
-                    this.isListening = false; // Prevents onend from auto-restarting
-                    try { this.recognizer.stop(); } catch(e){}
+                    // Only stop the recognizer loop if it is active, but keep app state ready for listening
+                    if (this.isListening) {
+                        try { this.recognizer.stop(); } catch(e){}
+                    }
                 }
                 
                 this.MATCHES = [];
@@ -703,7 +715,7 @@
                     this.updateNotification('INITIAL');
                     this.logStatus("App reset to AOD_LOCK state.");
                 } else {
-                    // This sets the UI to default (System Update Available) but keeps the APP_STATE ready for listening
+                    // Set UI to default ("System Update Available"), ready for immediate listening restart by onend or tap
                     this.updateNotification('INITIAL'); 
                     this.APP_STATE = 'AOD_LISTENING'; 
                     this.logStatus("App state cleared, ready for new voice input.");
@@ -727,7 +739,7 @@
                     this.logStatus("FATAL: Dictionary not accessible or is empty.", true);
                     document.getElementById('notif-text').textContent = "ERROR: DICT NOT AVAILABLE";
                 } else {
-                    this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Double-tap time to start.`);
+                    this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap time to start.`);
                 }
                 
                 this.initVoiceRecognition();
@@ -736,9 +748,10 @@
                 
                 const timeElement = document.getElementById('aod-time');
                 // Use both click (desktop) and touchstart (mobile) for double-tap detection
-                timeElement.addEventListener('click', (e) => this.handleDoubleTap(e));
-                timeElement.addEventListener('touchstart', (e) => this.handleDoubleTap(e));
+                timeElement.addEventListener('click', (e) => this.handleTap(e));
+                timeElement.addEventListener('touchstart', (e) => this.handleTap(e));
                 
+                // Initial call sets default UI text
                 this.updateNotification('INITIAL');
                 this.registerServiceWorker();
             }
