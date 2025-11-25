@@ -3,57 +3,146 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-<title>Magic AOD — Performer</title>
+<title>AOD Setting — Magic</title>
 <link rel="manifest" href="manifest.json">
-
 <style>
-  :root { --bg:#000; --fg:#fff; --muted: rgba(255,255,255,0.32); }
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial;}
-  .aod { width:100%;height:100%;max-width:600px;margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:28px 20px;position:relative;box-sizing:border-box;}
-  .time { margin-top:40px;font-size:72px;font-weight:300;user-select:none;cursor:default; }
-  .date { margin-top:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;user-select:none;}
-  .mic-indicator { position:absolute; top:12px; right:12px; width:8px; height:8px; border-radius:50%; background:transparent; border:1px solid rgba(255,255,255,0.06); }
+  :root {
+    --bg: #000;
+    --fg: #fff;
+    --muted: rgba(255,255,255,0.32);
+    --widget-bg: rgba(255,255,255,0.06); /* translucent white for spotify-like widget */
+  }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; -webkit-font-smoothing:antialiased; }
+  .aod {
+    width:100%; height:100%; max-width:600px; margin:0 auto; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:28px 20px; position:relative; box-sizing:border-box;
+  }
+
+  /* Time / Date */
+  .time { margin-top:40px; font-size:72px; line-height:0.9; font-weight:300; user-select:none; cursor:default; }
+  .date { margin-top:6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; user-select:none; }
+
+  /* Subtle in-app mic indicator (visible while listening) */
+  .mic-indicator {
+    position:absolute; top:12px; right:12px; width:8px; height:8px; border-radius:50%; background:transparent; border:1px solid rgba(255,255,255,0.06);
+  }
   .mic-indicator.listening { background:var(--fg); border-color:rgba(255,255,255,0.18); }
-  .aod-footer { position:absolute; bottom:18px; left:20px; right:20px; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-  .mini-player { width:100%; max-width:520px; background:transparent; color:var(--fg); display:flex; align-items:center; justify-content:space-between; padding:8px 10px; font-size:14px; pointer-events:auto; user-select:none; }
-  .mini-player .title { font-weight:600; }
+
+  /* Notification area (always present) */
+  .notif {
+    position:absolute; top:24px; left:20px; right:20px; display:flex; align-items:center; justify-content:flex-start; gap:12px; padding:8px 12px; border-radius:10px;
+    background: rgba(255,255,255,0.02); color:var(--fg); pointer-events:none; font-size:13px; box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  }
+  .notif .icon { width:18px; height:18px; opacity:0.9; }
+  .notif .text { color:var(--muted); font-weight:600; letter-spacing:0.2px; }
+
+  /* Fingerprint area */
+  .fingerprint-wrap {
+    width:86%; max-width:420px; height:72px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-top:36px; background: transparent; pointer-events:none;
+  }
+  .fingerprint {
+    width:64%; max-width:320px; height:56px; border-radius:10px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px;
+    user-select:none;
+  }
+
+  /* mini spotify widget / notification-like at center-bottom */
+  .aod-footer { position:absolute; bottom:78px; left:20px; right:20px; display:flex; align-items:center; justify-content:center; pointer-events:none; } /* moved up by 50px (was 18) */
+  .mini-player {
+    width:100%; max-width:520px; background:var(--widget-bg); border-radius:10px; color:var(--fg); display:flex; align-items:center; justify-content:space-between; padding:8px 12px; font-size:14px; pointer-events:auto;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  }
+  .mini-player .left { display:flex; align-items:center; gap:10px; }
+  .mini-player .art { width:44px; height:44px; border-radius:6px; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:var(--fg); }
+  .mini-player .meta { display:flex; flex-direction:column; align-items:flex-start; }
+  .mini-player .meta .title { font-size:14px; font-weight:600; }
+  .mini-player .meta .artist { font-size:12px; color:var(--muted); margin-top:2px; }
   .mini-player .timecode { color:var(--muted); font-size:13px; }
-  .aod-bottom { position:absolute; bottom:8px; left:18px; right:18px; display:flex; align-items:center; justify-content:space-between; pointer-events:none; }
+
+  /* bottom icon row moved up (50px) */
+  .aod-bottom { position:absolute; bottom:18px; left:18px; right:18px; display:flex; align-items:center; justify-content:space-between; pointer-events:none; transform: translateY(-50px); } /* shift up 50px */
   .aod-icon { width:28px; height:28px; opacity:0.95; pointer-events:auto; }
-  .aod-center { pointer-events:none; display:flex; align-items:center; justify-content:center; gap:10px; color:var(--muted); font-size:13px; }
-  .final-line { position:absolute; top:50%; left:50%; transform:translate(-50%,-10%); font-size:15px; color:var(--muted); opacity:0; pointer-events:none; transition:opacity .2s, transform .25s; text-align:center; }
-  .final-line.visible { opacity:1; transform:translate(-50%,-50%); color:var(--fg); }
-  button{background:none;border:none;color:inherit;font:inherit;}
-  #debug{position:absolute;top:110px;left:18px;font-size:12px;color:var(--muted);display:none}
+
+  /* final discreet line (uses notification area style when final) */
+  .final-line {
+    position:absolute; top:20px; left:20px; right:20px; display:none; align-items:center; gap:12px; padding:8px 12px; border-radius:10px; background: rgba(255,255,255,0.02); color:var(--fg); font-size:13px; pointer-events:none;
+  }
+  .final-line.visible { display:flex; }
+
+  /* keep minimal, no flashy animations */
+  button { background:none; border:none; color:inherit; font:inherit; }
+  @media (max-width:420px) {
+    .time { font-size:48px; }
+    .fingerprint { height:48px; }
+  }
 </style>
 </head>
 <body>
   <div class="aod" id="aodRoot">
+    <!-- in-app mic indicator -->
     <div class="mic-indicator" id="micIndicator" title="Microphone indicator (in-app)"></div>
 
+    <!-- Notification area always present (initial state) -->
+    <div class="notif" id="notifArea">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- settings gear -->
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09c.7 0 1.26-.44 1.51-1a1.65 1.65 0 0 0-.33-1.82L3.3 4.3A2 2 0 0 1 6.13 1.47l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V1a2 2 0 0 1 4 0v.09c.3.01.6.13.85.32"/>
+      </svg>
+      <div class="text" id="notifText">System update available</div>
+    </div>
+
+    <!-- Time and date (double-tap to start listening) -->
     <div id="time" class="time" tabindex="-1" aria-label="Time (double-tap to activate listening)">—:—</div>
     <div id="date" class="date">—</div>
 
-    <div id="debug"></div>
+    <!-- fingerprint scan area above spotify widget -->
+    <div class="fingerprint-wrap">
+      <div class="fingerprint" aria-hidden="true">
+        <!-- fingerprint SVG simplified -->
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 11c0-2 1-4 3-4s3 2 3 4v3M12 11c0-2-1-4-3-4S6 9 6 11v3" />
+          <path d="M8 18c0-2 2-3 4-3s4 1 4 3" />
+        </svg>
+      </div>
+    </div>
 
-    <div class="final-line" id="finalLine">Sohan wants <span id="finalWord">xxxxx</span> to</div>
+    <!-- Always visible mini spotify-like widget -->
+    <div class="aod-footer" id="footer">
+      <div class="mini-player" id="miniPlayer">
+        <div class="left">
+          <div class="art">ES</div>
+          <div class="meta">
+            <div class="title" id="mpTitle">Shape of You</div>
+            <div class="artist" id="mpArtist">Ed Sheeran</div>
+          </div>
+        </div>
+        <div class="timecode" id="mpTime">0:00</div>
+      </div>
+    </div>
 
-    <div class="aod-footer" id="footer"></div>
+    <!-- final-line (will replace notifArea visually when final) -->
+    <div class="final-line" id="finalLine"> 
+      <svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <!-- chat icon -->
+        <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+      </svg>
+      <div class="text" id="finalText">Sohan needs <span id="finalWord">xxxxx</span> to...</div>
+    </div>
 
+    <!-- bottom icons row moved up -->
     <div class="aod-bottom">
-      <div style="pointer-events:auto;" id="phoneIcon">
+      <div style="pointer-events:auto;" id="phoneIcon" title="Phone">
+        <!-- improved handset icon -->
         <svg class="aod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 4.18 2 2 0 0 1 4 2h3a1 1 0 0 1 1 .75c.12.78.37 1.53.72 2.24a1 1 0 0 1-.24 1.05L7.7 7.7a16 16 0 0 0 6 6l1.64-1.64a1 1 0 0 1 1.05-.24c.71.35 1.46.6 2.24.72A1 1 0 0 1 22 16.92z"></path>
+          <path d="M22 16.92V21a1 1 0 0 1-1.11 1 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2 3.11 1 1 0 0 1 3 2h3.09a1 1 0 0 1 1 .75c.12.78.37 1.53.72 2.24a1 1 0 0 1-.24 1.05L7.7 7.7a16 16 0 0 0 6 6l1.64-1.64a1 1 0 0 1 1.05-.24c.71.35 1.46.6 2.24.72A1 1 0 0 1 21 14.91V16.9z"></path>
         </svg>
       </div>
 
-      <div class="aod-center" id="fakePlayer">
-        <div class="fp-title" id="fpTitle">—</div>
+      <div class="aod-center" id="fakePlayer" style="pointer-events:none;">
+        <div class="fp-title" id="fpTitle">Shape of You</div>
         <div style="width:10px;"></div>
         <div class="fp-time" id="fpTime">0:00</div>
       </div>
 
-      <div style="pointer-events:auto;" id="camIcon">
+      <div style="pointer-events:auto;" id="camIcon" title="Camera">
         <svg class="aod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
           <circle cx="12" cy="13" r="4"></circle>
@@ -63,22 +152,21 @@
   </div>
 
 <script>
-/*
- index.html that loads large_dictionary.js from your GitHub repo via jsDelivr CDN,
- caches it (Cache API) for offline use, evaluates it (it sets window.LARGE_DICTIONARY),
- and initializes the AOD app only after dictionary is available.
-
- Uses:
- CDN_URL: jsDelivr link for the exact commit you provided:
- https://github.com/rainsonofficial-stack/Enigma/blob/cc82d64bbabae322cc5119fbe85dd16727c39fd6/large_dictionary.js
+/* Updated AOD app core:
+ - Hides transcript UI (no visible transcript)
+ - Keeps recognition running until final word is found (auto-restart)
+ - Uses jsDelivr remote dictionary, cached for offline use
+ - Double-tap time toggles listening (user gesture required)
+ - Shows always-visible spotify widget + notification area
+ - Replaces notif with final-line once final word found
+ - Safety: microphone use is user-initiated; in-app indicator is visible while listening.
 */
 
 const DICT_CDN_URL = 'https://cdn.jsdelivr.net/gh/rainsonofficial-stack/Enigma@cc82d64bbabae322cc5119fbe85dd16727c39fd6/large_dictionary.js';
-const DICT_CACHE_KEY = DICT_CDN_URL; // we use the URL as cache key
+const DICT_CACHE_KEY = DICT_CDN_URL;
 
-// --- Utility: load dictionary (cache-first then network). Evaluates JS that sets window.LARGE_DICTIONARY ---
+// load and cache dictionary (cache-first then network)
 async function loadRemoteDictionaryAndCache() {
-  // Try Cache Storage first
   if ('caches' in window) {
     try {
       const cache = await caches.open('magic-aod-dict-v1');
@@ -86,61 +174,43 @@ async function loadRemoteDictionaryAndCache() {
       if (cached) {
         const text = await cached.text();
         safelyEvalDictionary(text);
-        console.info('Loaded dictionary from Cache Storage (page-level).');
+        console.info('Loaded dictionary from Cache Storage.');
         return true;
       }
-    } catch (e) {
-      console.warn('Cache read failed:', e);
-    }
+    } catch (e) { console.warn('Cache read failed', e); }
   }
-
-  // If not cached -> fetch from network, cache it, eval it
   try {
     const resp = await fetch(DICT_CDN_URL, { cache: 'no-cache' });
     if (!resp.ok) throw new Error('Network response not OK: ' + resp.status);
     const text = await resp.text();
-
-    // Put into cache for offline (best-effort)
     if ('caches' in window) {
       try {
         const cache = await caches.open('magic-aod-dict-v1');
-        // Create a Response object and put it using the URL key
         const respClone = new Response(text, { headers: { 'Content-Type': 'application/javascript' } });
         await cache.put(DICT_CACHE_KEY, respClone);
-        console.info('Cached dictionary to Cache Storage.');
-      } catch (e) {
-        console.warn('Failed to cache dictionary:', e);
-      }
+        console.info('Cached dictionary.');
+      } catch (e) { console.warn('Failed to cache', e); }
     }
-
-    // Evaluate the JS file content safely (it should set window.LARGE_DICTIONARY = [...])
     safelyEvalDictionary(text);
-    console.info('Loaded dictionary from network and evaluated.');
+    console.info('Loaded dictionary from network.');
     return true;
   } catch (err) {
     console.warn('Network load failed:', err);
   }
-
-  // Fallback minimal dictionary (keeps app usable)
   window.LARGE_DICTIONARY = ['SOHAN','KANGAROO','MAGIC','SECRET','OPTIONAL','DIFFERENT','INTERESTING','SHAPE','YOU','EXAMPLE'];
-  console.warn('Using fallback local dictionary with', window.LARGE_DICTIONARY.length, 'words.');
+  console.warn('Using fallback local dictionary.');
   return false;
 }
 
-// Evaluate the remote JS text in a safe wrapper; the remote file is expected to assign window.LARGE_DICTIONARY.
-// We run it in a function scope to avoid polluting global scope and then check result.
 function safelyEvalDictionary(jsSource) {
   try {
-    // Common pattern in large_dictionary.js: window.LARGE_DICTIONARY = [...]
-    // We'll execute it but guard against misbehaving code.
     const wrapper = new Function('"use strict";\n' + jsSource + '\nreturn (typeof window !== "undefined" ? window.LARGE_DICTIONARY : undefined);');
     const result = wrapper();
     if (Array.isArray(result) && result.length > 0) {
-      // normalize to uppercase (app expects uppercase)
       window.LARGE_DICTIONARY = result.map(w => String(w).toUpperCase());
       return true;
     } else {
-      console.warn('Remote dictionary did not produce an array. Falling back.');
+      console.warn('Remote dictionary did not produce array.');
       return false;
     }
   } catch (e) {
@@ -149,54 +219,41 @@ function safelyEvalDictionary(jsSource) {
   }
 }
 
-// Register service worker (if you create sw.js later)
+/* Register service worker */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    console.info('Service worker registered:', reg.scope);
-  }).catch(err => {
-    console.warn('Service worker registration failed:', err);
-  });
+  navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW registration failed', e));
 }
 
-// --- App core (AOD UI + voice flow skeleton) ---
+/* App init & logic */
 (async function initApp(){
-  const debugEl = document.getElementById('debug');
-  debugEl.style.display = 'none';
-
-  // Load dictionary (cache-first)
   await loadRemoteDictionaryAndCache();
+  if (!window.LARGE_DICTIONARY) window.LARGE_DICTIONARY = ['SOHAN','KANGAROO','MAGIC','SECRET','OPTIONAL'];
 
-  // At this point window.LARGE_DICTIONARY should be available
-  if (!window.LARGE_DICTIONARY) {
-    window.LARGE_DICTIONARY = ['SOHAN','KANGAROO','MAGIC','SECRET','OPTIONAL'];
-  }
-
-  // Normalize dictionary for app logic
   const DICT = window.LARGE_DICTIONARY.map(w => String(w).toUpperCase());
-  console.info('Dictionary size:', DICT.length);
 
-  // AOD UI refs
   const timeEl = document.getElementById('time');
   const dateEl = document.getElementById('date');
   const micIndicator = document.getElementById('micIndicator');
-  const footer = document.getElementById('footer');
+  const notifArea = document.getElementById('notifArea');
+  const notifText = document.getElementById('notifText');
   const finalLine = document.getElementById('finalLine');
+  const finalText = document.getElementById('finalText');
   const finalWordSpan = document.getElementById('finalWord');
+  const miniPlayer = document.getElementById('miniPlayer');
+  const mpTime = document.getElementById('mpTime');
   const fpTitle = document.getElementById('fpTitle');
   const fpTime = document.getElementById('fpTime');
 
-  // clock
   function updateClock(){
     const now = new Date();
-    const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s(A|P)M/,'');
+    const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true }).replace(/\s(A|P)M/,'');
     const dateStr = now.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
     timeEl.textContent = timeStr;
     dateEl.textContent = dateStr;
   }
-  updateClock();
-  setInterval(updateClock, 1000);
+  updateClock(); setInterval(updateClock, 1000);
 
-  // small helpers (parser and filter) - match your earlier rules (4-digit code)
+  // parsing & filtering logic (4-digit)
   const TRIGGERS = { 'WORD':1, 'WORDS':1, 'DIFFERENT':2, 'OPTION':3, 'OPTIONS':3 };
   const LETTER_SHAPES = {
     1: new Set(['A','E','F','H','I','K','L','M','N','T','V','W','X','Y','Z']),
@@ -286,81 +343,65 @@ if ('serviceWorker' in navigator) {
     return { index: best, letters };
   }
 
-  // UI helpers
-  function showMiniPlayer(title, index){
-    footer.innerHTML = '';
-    const mp = document.createElement('div');
-    mp.className = 'mini-player';
-    const left = document.createElement('div'); left.className='title'; left.textContent = title;
-    const right = document.createElement('div'); right.className='timecode'; right.textContent = index ? `0:${String(index).padStart(2,'0')}` : '0:00';
-    mp.appendChild(left); mp.appendChild(right);
-    footer.appendChild(mp);
-    document.getElementById('fpTitle').textContent = title;
-    document.getElementById('fpTime').textContent = index ? `0:${String(index).padStart(2,'00')}` : '0:00';
+  // UI helpers for mini player / notif / final
+  function showMiniPlayer(index){
+    mpTime.textContent = index ? `0:${String(index).padStart(2,'0')}` : '0:00';
+    fpTime.textContent = mpTime.textContent;
   }
-  function hideMiniPlayer(){ footer.innerHTML=''; document.getElementById('fpTitle').textContent='—'; document.getElementById('fpTime').textContent='0:00'; }
-  function showFinal(word){
+  function showFinalWord(word){
     finalWordSpan.textContent = word || 'xxxxx';
+    // swap notification: hide initial notifArea, show finalLine
+    notifArea.style.display = 'none';
     finalLine.classList.add('visible');
-    setTimeout(()=> finalLine.classList.remove('visible'), 7000);
+    // stop listening (will be performed in processTranscript)
   }
 
-  // Speech recognition setup (user gesture required: double-tap on time)
+  // Speech recognition: explicit gesture to start; auto-restart until final found
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   let recognition = null;
-  if(SpeechRecognition) {
+  if(SpeechRecognition){
     recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.continuous = false; // single-shot sessions; we restart while active
+    recognition.continuous = false;
   } else {
-    debugEl.style.display = 'block';
-    debugEl.textContent = 'SpeechRecognition not supported in this browser.';
+    // no visible transcript; we won't show debug; but you can still see console logs
+    console.warn('SpeechRecognition not supported in this browser.');
   }
 
-  let APP = {
-    matches: [],
-    history: [],
-    lastIndexForDisamb: null,
-    shouldContinueListening: false
-  };
+  let APP = { matches: [], history: [], lastIndexForDisamb: null, shouldContinueListening: false };
 
-  if(recognition) {
-    recognition.onstart = () => { micIndicator.classList.add('listening'); debugEl.style.display='none'; };
+  if(recognition){
+    recognition.onstart = () => {
+      APP._listeningState = true;
+      micIndicator.classList.add('listening'); // subtle in-app dot
+      // Keep the mini-player display unchanged while listening
+    };
     recognition.onend = () => {
+      APP._listeningState = false;
       micIndicator.classList.remove('listening');
-      if(APP.shouldContinueListening) {
-        try { recognition.start(); } catch(e) { console.warn('restart failed', e); }
+      // Auto-restart only if still active and we haven't finalized
+      if(APP.shouldContinueListening){
+        try { recognition.start(); } catch(e){ console.warn('restart failed', e); }
       }
     };
     recognition.onerror = (ev) => {
-      micIndicator.classList.remove('listening');
+      console.warn('Speech error', ev);
       APP.shouldContinueListening = false;
-      debugEl.style.display='block';
-      debugEl.textContent = 'Speech error: ' + (ev.error || 'unknown');
+      micIndicator.classList.remove('listening');
     };
     recognition.onresult = (ev) => {
       const t = ev.results[0][0].transcript.trim();
-      debugEl.style.display='block';
-      debugEl.textContent = 'Transcript: ' + t;
-      processTranscript(t);
+      // NO visible transcript shown to UI (we keep it hidden for discreteness)
+      console.debug('transcript:', t); // debug only in console
+      handleTranscript(t);
     };
   }
 
-  function startListeningLoop(){
-    if(!recognition) return;
-    APP.matches = []; APP.history = []; APP.lastIndexForDisamb = null;
-    APP.shouldContinueListening = true;
-    try { recognition.start(); } catch(e) { console.warn('start failed', e); }
-  }
-  function stopListeningLoop(){
-    APP.shouldContinueListening = false;
-    try { recognition.stop(); } catch(e) {}
-    micIndicator.classList.remove('listening');
-  }
-
-  function processTranscript(t){
+  // Handle recognized speech: code or capture letter and update UI
+  function handleTranscript(t){
+    // 1) Try code phrase
     const codeInfo = parseForCode(t);
     if(codeInfo){
       const code = codeInfo.code;
@@ -369,13 +410,16 @@ if ('serviceWorker' in navigator) {
       APP.history = [matches.slice()];
       const dis = findBestIndex(matches);
       APP.lastIndexForDisamb = dis.index || null;
-      showMiniPlayer('Shape of you', dis.index || 0);
-      debugEl.style.display='block';
-      debugEl.textContent = `Code ${code} → ${matches.length} matches. Index: ${dis.index || 'n/a'}`;
-      if(matches.length === 1){ showFinal(matches[0]); stopListeningLoop(); }
+      showMiniPlayer(dis.index || 0);
+      console.info(`Code ${code} → ${matches.length} matches. Index ${dis.index || 'n/a'}`);
+      if(matches.length === 1){
+        showFinalWord(matches[0]);
+        stopListening();
+      }
       return;
     }
 
+    // 2) Try capture letter via 'interesting'
     const letter = parseLetterBeforeInteresting(t);
     if(letter){
       const idx = APP.lastIndexForDisamb || 1;
@@ -383,38 +427,61 @@ if ('serviceWorker' in navigator) {
       const filtered = prev.filter(w => (w[idx-1] || '') === letter);
       APP.history.push(filtered.slice());
       APP.matches = filtered;
-      debugEl.style.display='block';
-      debugEl.textContent = `Captured letter ${letter} at pos ${idx}. ${filtered.length} remain.`;
-      if(filtered.length === 1){ showFinal(filtered[0]); stopListeningLoop(); return; }
+      console.info(`Captured letter ${letter} at pos ${idx}. ${filtered.length} remain.`);
+      if(filtered.length === 1){
+        showFinalWord(filtered[0]);
+        stopListening();
+        return;
+      }
       const dis2 = findBestIndex(filtered);
       APP.lastIndexForDisamb = dis2.index || null;
-      showMiniPlayer('Shape of you', dis2.index || 0);
+      showMiniPlayer(dis2.index || 0);
       return;
     }
 
-    // nothing actionable
+    // otherwise ignore quietly
   }
 
-  // double-tap detection on time
+  function startListening(){
+    if(!recognition) return;
+    APP.matches = []; APP.history = []; APP.lastIndexForDisamb = null;
+    APP.shouldContinueListening = true;
+    try { recognition.start(); } catch(e){ console.warn('start failed', e); }
+  }
+  function stopListening(){
+    APP.shouldContinueListening = false;
+    try { recognition.stop(); } catch(e){ /* ignore */ }
+    micIndicator.classList.remove('listening');
+  }
+
+  // Double-tap detection on time to toggle listening (explicit gesture)
   let lastTap = 0;
   function handleTap(e){
     const now = Date.now();
     if(now - lastTap < 300 && now - lastTap > 0){
-      if(!APP.shouldContinueListening) startListeningLoop(); else stopListeningLoop();
+      if(!APP.shouldContinueListening) {
+        // hide final if previously visible and restore notif area
+        finalLine.classList.remove('visible');
+        notifArea.style.display = 'flex';
+        startListening();
+      } else {
+        stopListening();
+      }
       lastTap = 0;
     } else lastTap = now;
   }
   timeEl.addEventListener('touchstart', handleTap);
   timeEl.addEventListener('click', handleTap);
 
-  // Expose for testing
-  window.MAGIC_AOD = { DICT, startListeningLoop, stopListeningLoop, parseForCode, parseLetterBeforeInteresting, wordsToDigits };
+  // Expose control for console testing
+  window.MAGIC_AOD = { startListening, stopListening, DICT };
 
-  // Try to pre-cache dictionary with service worker as well (best-effort)
-  if('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    try { navigator.serviceWorker.controller.postMessage({ type:'PRECACHE_DICT', url: DICT_CDN_URL }); }
-    catch(e) { /* ignore */ }
-  }
+  // Make sure the mini player and notification show initial values
+  document.getElementById('mpTitle').textContent = 'Shape of You';
+  document.getElementById('mpArtist').textContent = 'Ed Sheeran';
+  mpTime.textContent = '0:00';
+  fpTime.textContent = '0:00';
+  // Notification initial text already set in markup
 
 })(); // end initApp
 </script>
