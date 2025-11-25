@@ -59,35 +59,38 @@
         #system-notification {
             width: 90%;
             max-width: 300px; 
-            padding: 8px 12px; 
+            padding: 5px 10px; 
             background: #282a2d; 
-            border-radius: 8px; 
+            border-radius: 6px; 
             display: flex;
-            align-items: center;
+            align-items: center; /* FIX: Vertical Center Alignment */
             transition: opacity 0.5s;
             margin-top: 10px; 
-            min-height: 35px; /* Ensure space for content */
+            min-height: 30px; 
         }
         .notif-icon-svg {
-            margin-right: 8px;
+            margin-right: 6px; 
             color: #c4c4c4; 
-            width: 16px;
-            height: 16px;
+            width: 14px; 
+            height: 14px;
             line-height: 1;
             flex-shrink: 0;
             transition: transform 0.5s;
         }
         .final-word-placeholder {
             color: #ffffff; 
-            font-weight: 700;
-            letter-spacing: 1px;
+            font-weight: 500; 
+            letter-spacing: 0.5px;
         }
         .notif-text {
-            font-size: 13px;
+            font-size: 12px; 
             color: #d1d1d1;
-            font-weight: 500;
+            font-weight: 500; 
             word-break: break-word; 
             line-height: 1.3;
+            white-space: normal;
+            flex-grow: 1;
+            text-align: center; /* FIX: Horizontal Center Alignment */
         }
         
         /* Listening State Styles: Only the pulse animation remains visible */
@@ -406,16 +409,14 @@
                 return indices;
             },
 
-            // FIX: Reliable single-tap start
+            // FIX: Reliable single-tap start (forces reload for clean mic start)
             handleSingleTap(event) {
                 event.preventDefault(); 
-                // A single tap is a user gesture, required to restart the mic reliably.
-                // We check if we are not actively listening or if we are in the locked state.
+                // As requested, if the mic is not listening (likely stuck after app closure/reopen), force a page reload.
                 if (!this.isListening || this.APP_STATE === 'AOD_LOCK') {
-                    this.logStatus("Single Tap: Manually activating mic/restarting loop.");
-                    // Clear state (but not UI message) and start listening
-                    this.resetApp(false); 
-                    this.startListening();
+                    this.logStatus("Single Tap: Mic inactive or locked. Forcing page reload for clean mic restart.");
+                    // Reloading the page forces the entire app, including the mic API, to reinitialize cleanly.
+                    window.location.reload(); 
                 } else {
                     this.logStatus("Single Tap: Mic already active.");
                 }
@@ -456,7 +457,7 @@
                 });
             },
             
-            // FIX for Issue 1: Finds the position with the ABSOLUTE maximum number of unique letters
+            // Finds the position with the ABSOLUTE maximum number of unique letters
             getDisambiguationIndex(matches) {
                 if (matches.length <= 1) return -1;
                 const minLength = Math.min(...matches.map(w => w.length));
@@ -472,7 +473,6 @@
                     const uniqueCount = new Set(lettersAtPosition).size;
 
                     // Only update if the current position is strictly better than the maximum found so far
-                    // This ensures that Position 3 is preferred over Position 1 if 3 has more unique letters.
                     if (uniqueCount > maxUniqueLetters) { 
                         maxUniqueLetters = uniqueCount;
                         bestIndex = i + 1; // 1-based index
@@ -607,17 +607,19 @@
                     this.stopListening(); 
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     const finalWord = this.MATCHES[0];
-                    notifText.innerHTML = `Sohan wants <span class="final-word-placeholder">${finalWord}</span> to...`;
+                    // Final word is normal font weight (no class/bold)
+                    notifText.innerHTML = `Sohan wants ${finalWord.toLowerCase()} to...`; 
                     currentSecond.textContent = '00';
                     
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
                     // SUCCESS PATH: Display word list 
                     this.APP_STATE = 'AOD_LISTENING';
-                    const displayWords = this.MATCHES.slice(0, 4).map(w => w.toLowerCase()).join(', ');
-                    const moreText = this.MATCHES.length > 4 ? ` (+${this.MATCHES.length - 4})` : '';
+                    // Display ALL words, allow wrapping 
+                    const displayWords = this.MATCHES.map(w => w.toLowerCase()).join(', '); 
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; // Use chat icon for word list
-                    notifText.innerHTML = `To buy: ${displayWords}${moreText}`;
+                    // Words are normal font weight
+                    notifText.innerHTML = `To buy: ${displayWords}`; 
                     currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     this.updateListeningUI(true); // Ensure pulse is active
 
@@ -747,7 +749,7 @@
                 this.updateNotification('INITIAL');
                 this.registerServiceWorker();
                 
-                // Attempt to start listening immediately on load (If it fails, the tap fix handles the recovery)
+                // Attempt to start listening immediately on load 
                 this.startListening();
             }
         };
