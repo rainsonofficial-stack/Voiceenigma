@@ -394,8 +394,6 @@
 
                 if (timeEl) timeEl.textContent = time;
                 if (dateEl) dateEl.textContent = date;
-                
-                this.logStatus(`Time updated: ${time} | ${date}`); // Add log for debugging
             },
 
             getVowelIndices(word) {
@@ -408,9 +406,11 @@
                 return indices;
             },
 
+            // FIX: Reliable single-tap start
             handleSingleTap(event) {
                 event.preventDefault(); 
                 // A single tap is a user gesture, required to restart the mic reliably.
+                // We check if we are not actively listening or if we are in the locked state.
                 if (!this.isListening || this.APP_STATE === 'AOD_LOCK') {
                     this.logStatus("Single Tap: Manually activating mic/restarting loop.");
                     // Clear state (but not UI message) and start listening
@@ -421,6 +421,7 @@
                 }
             },
 
+            // FIX: Master reset on double-tap
             handleDoubleTap(event) {
                 event.preventDefault(); 
                 this.logStatus("Double Tap: Master Reset.");
@@ -471,6 +472,7 @@
                     const uniqueCount = new Set(lettersAtPosition).size;
 
                     // Only update if the current position is strictly better than the maximum found so far
+                    // This ensures that Position 3 is preferred over Position 1 if 3 has more unique letters.
                     if (uniqueCount > maxUniqueLetters) { 
                         maxUniqueLetters = uniqueCount;
                         bestIndex = i + 1; // 1-based index
@@ -735,10 +737,9 @@
                 // CRITICAL FIX: Use dedicated handlers for single and double tap
                 timeElement.addEventListener('click', (e) => this.handleSingleTap(e));
                 timeElement.addEventListener('dblclick', (e) => this.handleDoubleTap(e));
+                // Use touchstart to prevent the 300ms click delay on mobile
                 timeElement.addEventListener('touchstart', (e) => {
-                    // Prevent default behavior to allow dblclick to fire without 300ms delay
                     e.preventDefault(); 
-                    // We rely on the browser's touch-to-click/dblclick conversion
                 }, {passive: false});
 
 
@@ -746,7 +747,7 @@
                 this.updateNotification('INITIAL');
                 this.registerServiceWorker();
                 
-                // Attempt to start listening immediately on load 
+                // Attempt to start listening immediately on load (If it fails, the tap fix handles the recovery)
                 this.startListening();
             }
         };
