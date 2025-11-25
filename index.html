@@ -88,7 +88,7 @@
             letter-spacing: 1px;
         }
         
-        /* New Listening State Styles */
+        /* New Listening State Styles: Only the pulse animation remains visible */
         .listening-active {
             animation: pulse-mic 1.5s infinite;
         }
@@ -256,17 +256,19 @@
                 'OPTION': 3, 'OPTIONS': 3,
             },
 
-            // Spelled-out numbers mapping (made more comprehensive)
+            // Single-digit and 'teen' number word mapping for D1, D2, D3 extraction
             NUMBER_WORDS: {
                 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 
                 'FIVE': 5, 'SIX': 6, 'SEVEN': 7, 'EIGHT': 8, 'NINE': 9,
-                // Added robustness for common recognition errors
+                'TEN': 1, 'ELEVEN': 1, 'TWELVE': 2, 'THIRTEEN': 3, 'FOURTEEN': 4,
+                'FIFTEEN': 5, 'SIXTEEN': 6, 'SEVENTEEN': 7, 'EIGHTEEN': 8, 'NINETEEN': 9,
+                
+                // Robustness for common speech recognition errors
                 'WAN': 1, 'TOO': 2, 'FOR': 4, 'WON': 1,
             },
 
             // SVG Icons
             ICON_GEAR_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>`,
-            ICON_MIC_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
             ICON_CHAT_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`,
 
             // --- UI/Helper Functions ---
@@ -281,7 +283,6 @@
             
             updateTime() {
                 const now = new Date();
-                
                 let hours = now.getHours();
                 const minutes = now.getMinutes().toString().padStart(2, '0');
                 
@@ -298,7 +299,6 @@
             getVowelIndices(word) {
                 const indices = [];
                 for (let i = 0; i < word.length; i++) {
-                    // Check for uppercase vowels
                     if (word[i].toUpperCase().match(/[AEIOU]/)) {
                         indices.push(i + 1); // 1-based position
                     }
@@ -308,14 +308,12 @@
 
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
-                // Only start if we are not already listening
                 if (this.isListening) return; 
 
                 this.isListening = true;
                 this.APP_STATE = 'AOD_LISTENING';
-                this.updateListeningUI(true); // New UI call
+                this.updateListeningUI(true); // Update UI to mic active state (pulsing gear)
                 try {
-                    // Attempt to stop anything lingering, then start
                     this.recognizer.stop(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session.");
@@ -328,29 +326,30 @@
             
             stopListening() {
                 this.isListening = false;
-                this.APP_STATE = 'AOD_DISPLAY_FINAL'; // Default state after processing a command
-                this.updateListeningUI(false); // New UI call
+                this.APP_STATE = 'AOD_DISPLAY_FINAL'; // Final state after processing a command
+                this.updateListeningUI(false); // Update UI to inactive state
                 try {
                     this.recognizer.stop();
                     this.logStatus("Stopped continuous listening.");
                 } catch (e) {}
             },
 
+            // Hides the "Listening for Code" text, relying only on the pulse animation for discretion.
             updateListeningUI(isActive) {
                 const notifIcon = document.getElementById('notif-icon');
-                const notifText = document.getElementById('notif-text');
+                
                 if (isActive) {
-                    notifIcon.innerHTML = this.ICON_MIC_SVG;
-                    notifIcon.classList.add('listening-active');
-                    notifText.textContent = "Listening for Code...";
+                    notifIcon.classList.add('listening-active'); // Starts pulse animation
                 } else {
-                    notifIcon.classList.remove('listening-active');
-                    // Only update text/icon if we are fully resetting to the initial lock state
-                    if (this.APP_STATE === 'AOD_LOCK') {
-                        notifIcon.innerHTML = this.ICON_GEAR_SVG;
-                        notifText.textContent = "System Update Available";
-                    }
+                    notifIcon.classList.remove('listening-active'); // Stops pulse animation
                 }
+                
+                // If the app is in its initial or failed state, always show the default gear/text
+                if (this.APP_STATE === 'AOD_LOCK' || this.MATCHES.length === 0) {
+                     document.getElementById('notif-icon').innerHTML = this.ICON_GEAR_SVG;
+                     // Text update handled by updateNotification('INITIAL') or ('NO_MATCHES')
+                }
+                // Word list and final states are handled exclusively by updateNotification.
             },
 
             initVoiceRecognition() {
@@ -370,8 +369,8 @@
 
                 // Auto-restart logic
                 this.recognizer.onend = () => {
-                    // Check if we are still supposed to be listening (i.e., we didn't process a command)
-                    if (this.isListening && this.APP_STATE === 'AOD_LISTENING') {
+                    // Only restart if the app explicitly set isListening to true and we haven't found the final word.
+                    if (this.isListening && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                         setTimeout(() => {
                             if (this.isListening) {
                                 this.logStatus("Auto-restarting listening...");
@@ -401,7 +400,7 @@
                     const transcript = event.results[0][0].transcript.toUpperCase().trim();
                     this.logStatus(`RAW Transcript received: "${transcript}"`);
                     
-                    // Stop the current recognition loop immediately after receiving a result
+                    // Stop the current recognition session immediately
                     this.isListening = false; 
                     this.recognizer.stop(); 
                     
@@ -470,7 +469,6 @@
                 let bestIndex = -1;
                 let maxUniqueLetters = 1; 
                 
-                // Iterates through positions 1 to minLength
                 for (let i = 0; i < minLength; i++) {   
                     const lettersAtPosition = matches
                         .map(word => word.length > i ? word[i] : null)
@@ -478,12 +476,10 @@
                     if (lettersAtPosition.length === 0) continue;
                     const uniqueLetters = new Set(lettersAtPosition);
 
-                    // We are looking for the position with the most unique letters
                     if (uniqueLetters.size > maxUniqueLetters) {
                         maxUniqueLetters = uniqueLetters.size;
                         bestIndex = i + 1; 
                     }
-                    // If we find 3 or more unique letters, that's often good enough
                     if (maxUniqueLetters >= 3) break; 
                 }
                 return bestIndex;
@@ -494,29 +490,22 @@
             handleInitialPasscode(transcript) {
                 let d4 = 0;
                 let numbers = [];
-                const words = transcript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
+                const words = transcript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(' ').map(w => w.trim()).filter(w => w.length > 0);
                 
-                // 1. Collect all numbers and find D4 trigger in a single pass
                 for (const w of words) {
-                    // Check for D4 trigger
                     const triggerValue = this.D4_TRIGGERS[w];
-                    if (triggerValue) {
-                        d4 = triggerValue;
-                    }
+                    if (triggerValue) { d4 = triggerValue; }
 
-                    // Check for numeric value (spelled-out or single digit)
                     const spelled = this.NUMBER_WORDS[w];
                     if (spelled) {
                         numbers.push(spelled);
                         continue;
                     } 
                     
-                    // Check if the word is a string of 1, 2, or 3 digits (e.g., "724")
-                    if (w.length >= 1 && w.length <= 3 && /^\d+$/.test(w)) {
-                        // Break concatenated digits into separate numbers
+                    if (/^\d{1,4}$/.test(w)) {
                         for (const digitChar of w) {
                             const digit = parseInt(digitChar, 10);
-                            if (digit > 0) {
+                            if (digit >= 1 && digit <= 9) {
                                 numbers.push(digit);
                             }
                         }
@@ -524,43 +513,39 @@
                     }
                 }
                 
-                // We only need the last three numbers found
                 if (numbers.length > 3) {
                     numbers = numbers.slice(numbers.length - 3);
                 }
 
                 if (d4 === 0 || numbers.length !== 3) {
-                    this.logStatus(`Initial passcode failed to process. Digits found: ${numbers.length} (${numbers.join(', ')}), D4: ${d4}. Showing transcript before re-starting.`);
+                    this.logStatus(`Initial passcode failed to process. Retrying listening loop.`);
                     
                     this.showFailedTranscript(transcript);
 
+                    // Must re-start listening after showing the error transcript
                     setTimeout(() => {
-                        this.updateListeningUI(false);
                         this.startListening();
                     }, this.TRANSCRIPT_DISPLAY_DURATION);
                     return; 
                 }
                 
                 const [d1, d2, d3] = numbers;
-                
                 this.logStatus(`PASSCODE PARSED: D1=${d1}, D2=${d2}, D3=${d3}, D4=${d4}`);
 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
-                    this.logStatus("Dictionary not loaded or is empty. Cannot run filter.", true); 
+                    this.logStatus("Dictionary not loaded. Resetting.", true); 
                     this.resetApp(true);
                     return; 
                 }
 
                 const matches = this.filterDictionary(d1, d2, d3, d4, LARGE_DICTIONARY);
 
-                // --- STRICT MATCHING LOGIC ---
                 if (matches.length === 0) {
-                    this.logStatus("Code filtered to 0 matches. Re-starting listening for a new code.");
-                    // Immediately re-start listening without changing UI (timer remains 00, notification remains "Listening...")
-                    this.startListening(); 
+                    this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listening.");
+                    // --- NEW BEHAVIOR: 0 matches should display an error and keep mic on ---
+                    this.updateNotification('NO_MATCHES'); 
                     return; 
                 }
-                // --- END STRICT MATCHING ---
 
                 this.HISTORY = []; 
                 this.HISTORY.push(matches);
@@ -572,7 +557,6 @@
             },
             
             handleLetterInput(transcript) {
-                // Mic automatically stopped after onresult, but we restart it if we need more input
                 this.isListening = false;
                 
                 if (this.MATCHES.length <= 1) {
@@ -589,7 +573,6 @@
                     return;
                 }
                 
-                // Look for the last word before the trigger
                 const preTrigger = transcript.substring(0, triggerIndex).trim();
                 const preWords = preTrigger.split(' ').filter(w => w.length > 0);
                 
@@ -601,14 +584,14 @@
                 
                 const spokenWord = preWords[preWords.length - 1];
                 const magicLetter = spokenWord[0].toUpperCase();
-                const pos = this.CURRENT_POSITION_INDEX - 1; // 0-based index
+                const pos = this.CURRENT_POSITION_INDEX - 1; 
 
                 const filtered = this.MATCHES.filter(word => 
                     word.length > pos && word[pos] === magicLetter
                 );
 
                 if (filtered.length === 0) {
-                    this.logStatus(`Filter failed: Letter '${magicLetter}' at position ${this.CURRENT_POSITION_INDEX} yielded 0 matches. Reverting to previous list.`);
+                    this.logStatus(`Filter failed: Letter '${magicLetter}' yielded 0 matches. Reverting to previous list and re-starting.`);
                     this.showFailedTranscript(transcript);
                     setTimeout(() => this.checkMatchesAndProceed(), this.TRANSCRIPT_DISPLAY_DURATION);
                     return;
@@ -626,9 +609,11 @@
                 const notifIcon = document.getElementById('notif-icon');
                 const notifText = document.getElementById('notif-text');
                 
-                notifIcon.innerHTML = this.ICON_MIC_SVG; 
+                // Temporarily show the microphone icon for the error message
+                notifIcon.innerHTML = this.ICON_GEAR_SVG; 
                 notifIcon.classList.remove('listening-active');
 
+                // Show the transcript that failed to parse
                 notifText.innerHTML = `<span style="color: #F8F8F8; font-weight: 700;">DIDN'T PARSE:</span> ${transcript.toLowerCase()}`;
             },
 
@@ -636,26 +621,46 @@
                 const notifIcon = document.getElementById('notif-icon');
                 const notifText = document.getElementById('notif-text');
                 const currentSecond = document.getElementById('current-second');
+                
+                // Stop the pulse when updating to a definite state
+                if (status === 'FINAL' || status === 'INITIAL' || status === 'NO_MATCHES') {
+                    notifIcon.classList.remove('listening-active');
+                }
 
                 if (status === 'FINAL') {
-                    const finalWord = this.MATCHES[0];
-                    this.stopListening(); // Fully stop recognition
+                    this.stopListening(); 
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
+                    const finalWord = this.MATCHES[0];
                     notifText.innerHTML = `Sohan wants <span class="final-word-placeholder">${finalWord}</span> to...`;
                     currentSecond.textContent = '00';
+                    
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
+                    // Filter successful. Display list and start mic (pulsing gear).
+                    this.APP_STATE = 'AOD_LISTENING';
                     const displayWords = this.MATCHES.slice(0, 4).map(w => w.toLowerCase()).join(', ');
                     const moreText = this.MATCHES.length > 4 ? ` (+${this.MATCHES.length - 4})` : '';
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     notifText.innerHTML = `To buy: ${displayWords}${moreText}`;
+                    currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     
-                    // Restart listening for the next letter input (D5, D6, etc.)
-                    this.startListening(); 
+                    this.startListening(); // Re-engages the mic loop and pulse
+
+                } else if (status === 'NO_MATCHES') {
+                    // Code failed to find any matches. Show error and keep mic on.
+                    this.APP_STATE = 'AOD_LISTENING'; // Stay in the listening state
+                    notifIcon.innerHTML = this.ICON_GEAR_SVG;
+                    notifText.textContent = "Update not available";
+                    currentSecond.textContent = '00';
+                    
+                    this.startListening(); // Keeps mic active for next attempt
 
                 } else if (status === 'INITIAL') {
-                    this.updateListeningUI(false);
+                    // Default reset to lock screen.
+                    this.APP_STATE = 'AOD_LOCK';
+                    notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "System Update Available";
+                    currentSecond.textContent = '00';
                 }
             },
 
@@ -663,16 +668,15 @@
                 
                 if (this.MATCHES.length === 1) {
                     this.APP_STATE = 'AOD_DISPLAY_FINAL';
-                    this.updateNotification('FINAL');
-                    this.logStatus(`FINAL WORD FOUND: ${this.MATCHES[0]}`);
+                    this.updateNotification('FINAL'); // Stops mic
                     
                 } else if (this.MATCHES.length > 1) {
                     const bestIndex = this.getDisambiguationIndex(this.MATCHES);
 
                     if (bestIndex === -1) {
-                        this.logStatus(`Ambiguous State: ${this.MATCHES.length} matches. Cannot proceed beyond current filter.`, true);
-                        this.CURRENT_POSITION_INDEX = 0; // Reset position, but keep list
-                        this.updateNotification('WORD_LIST'); // Display list and restart mic
+                        this.logStatus(`Ambiguous State: ${this.MATCHES.length} matches. Cannot proceed.`);
+                        this.CURRENT_POSITION_INDEX = 0; 
+                        this.updateNotification('WORD_LIST'); // Displays list and restarts mic
                         return;
                     }
                     
@@ -681,10 +685,9 @@
                     // Update Music Player (0:XX) to the required disambiguation position
                     document.getElementById('current-second').textContent = bestIndex.toString().padStart(2, '0');
                     
-                    this.updateNotification('WORD_LIST'); // Display list and restart mic
+                    this.updateNotification('WORD_LIST'); // Displays list and restarts mic
                     
                 } else {
-                    // This path should ideally not be hit if handleInitialPasscode/handleLetterInput works correctly
                     this.resetApp(true);
                 }
             },
@@ -697,12 +700,13 @@
                 document.getElementById('current-second').textContent = '00';
                 
                 if (returnToLock) {
-                    this.APP_STATE = 'AOD_LOCK';
                     this.updateNotification('INITIAL');
                     this.logStatus("App reset to AOD_LOCK state.");
                 } else {
-                    // Prepares for a new voice command without going back to "System Update Available"
                     this.APP_STATE = 'AOD_LISTENING';
+                    // We call updateNotification('INITIAL') just to set the text/icon to default 
+                    // without stopping the mic loop, which is started immediately after this call chain.
+                    this.updateNotification('INITIAL'); 
                     this.logStatus("App state cleared, ready for new voice input.");
                 }
             },
@@ -721,7 +725,7 @@
             // --- Initialization ---
             init() {
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
-                    this.logStatus("FATAL: Dictionary not accessible or is empty. Functionality limited.", true);
+                    this.logStatus("FATAL: Dictionary not accessible or is empty.", true);
                     document.getElementById('notif-text').textContent = "ERROR: DICT NOT AVAILABLE";
                 } else {
                     this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Double-tap time to start.`);
