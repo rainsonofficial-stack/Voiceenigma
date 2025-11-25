@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<title>Magic AOD — Performer</title>
+
+<!-- PWA manifest -->
+<link rel="manifest" href="manifest.json">
+
+<style>
+  /* Minimal AOD style: white on black, discreet */
+  :root {
+    --bg:#000;
+    --fg:#fff;
+    --muted: rgba(255,255,255,0.32);
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; -webkit-font-smoothing:antialiased;}
+  .aod {
+    box-sizing:border-box;
+    width:100%;
+    height:100%;
+    max-width:600px;
+    margin:0 auto;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    padding:28px 20px;
+    position:relative;
+  }
+
+  /* Time / Date */
+  .time {
+    margin-top:40px;
+    font-size:72px;
+    line-height:0.9;
+    font-weight:300;
+    user-select:none;
+    -webkit-user-select:none;
+    cursor:default;
+  }
+  .date { margin-top:6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; user-select:none; }
+
+  /* Subtle in-app mic indicator (must remain visible for privacy) */
+  .mic-indicator {
+    position:absolute;
+    top:12px;
+    right:12px;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:transparent; /* off state */
+    border:1px solid rgba(255,255,255,0.06);
+  }
+  .mic-indicator.listening {
+    background:var(--fg); /* subtle white dot while listening */
+    border-color:rgba(255,255,255,0.18);
+  }
+
+  /* Discreet notification / mini player (center-bottom) */
+  .aod-footer {
+    position:absolute;
+    bottom:18px;
+    left:20px;
+    right:20px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    pointer-events:none;
+  }
+  .mini-player {
+    width:100%;
+    max-width:520px;
+    background:transparent;
+    color:var(--fg);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:8px 10px;
+    font-size:14px;
+    pointer-events:auto;
+    user-select:none;
+  }
+  .mini-player .title { font-weight:600; }
+  .mini-player .timecode { color:var(--muted); font-size:13px; }
+
+  /* Phone / Camera / fake player row at very bottom (AOD icons) */
+  .aod-bottom {
+    position:absolute;
+    bottom:8px;
+    left:18px;
+    right:18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    pointer-events:none;
+  }
+  .aod-icon { width:28px; height:28px; opacity:0.95; pointer-events:auto; }
+  .aod-center { pointer-events:none; display:flex; align-items:center; justify-content:center; gap:10px; color:var(--muted); font-size:13px; }
+
+  /* discreet final line */
+  .final-line {
+    position:absolute;
+    top: 50%;
+    left:50%;
+    transform:translate(-50%,-10%);
+    font-size:15px;
+    color:var(--muted);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .2s, transform .25s;
+    text-align:center;
+  }
+  .final-line.visible {
+    opacity:1;
+    transform:translate(-50%,-50%);
+    color:var(--fg);
+  }
+
+  /* Keep everything minimal: no flashy animations */
+  button { background:none; border:none; color:inherit; font:inherit; }
+</style>
+</head>
+<body>
+  <div class="aod" id="aodRoot">
+    <!-- subtle mic indicator (in-app) -->
+    <div class="mic-indicator" id="micIndicator" title="Microphone indicator (in-app)"></div>
+
+    <!-- Time (double-tap to start/stop recognition) -->
+    <div id="time" class="time" tabindex="-1" aria-label="Time (double-tap to activate listening)"></div>
+    <div id="date" class="date"></div>
+
+    <!-- Center debug (hidden by default) -->
+    <div id="debug" style="position:absolute; top:110px; left:18px; font-size:12px; color:var(--muted); display:none;"></div>
+
+    <!-- discreet final text -->
+    <div class="final-line" id="finalLine">Sohan wants <span id="finalWord">xxxxx</span> to</div>
+
+    <!-- center-bottom mini player (used to display index; looks like music player) -->
+    <div class="aod-footer" id="footer">
+      <!-- content inserted dynamically -->
+    </div>
+
+    <!-- bottom icon row -->
+    <div class="aod-bottom">
+      <!-- phone icon (left) -->
+      <div style="pointer-events:auto;" id="phoneIcon">
+        <svg class="aod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 4.18 2 2 0 0 1 4 2h3a1 1 0 0 1 1 .75c.12.78.37 1.53.72 2.24a1 1 0 0 1-.24 1.05L7.7 7.7a16 16 0 0 0 6 6l1.64-1.64a1 1 0 0 1 1.05-.24c.71.35 1.46.6 2.24.72A1 1 0 0 1 22 16.92z"></path>
+        </svg>
+      </div>
+
+      <!-- fake spotify player in center -->
+      <div class="aod-center" id="fakePlayer" style="pointer-events:none;">
+        <div class="fp-title" id="fpTitle">—</div>
+        <div style="width:10px;"></div>
+        <div class="fp-time" id="fpTime">0:00</div>
+      </div>
+
+      <!-- camera icon (right) -->
+      <div style="pointer-events:auto;" id="camIcon">
+        <svg class="aod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+          <circle cx="12" cy="13" r="4"></circle>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- dictionary loader - must define LARGE_DICTIONARY array -->
+  <script src="large_dictionary.js"></script>
+
+  <script>
+    /* IMPORTANT: This implementation intentionally requires an obvious user gesture (double-tap)
+       to start speech recognition. It displays a subtle in-app dot while listening.
+       Do NOT attempt to hide microphone activation — rely on the OS-level green dot for system consent.
+       This code keeps listening until a single final match is found, then stops. */
+
+    (function(){
+      // ---- App state ----
+      const APP = {
+        dict: (typeof LARGE_DICTIONARY !== 'undefined') ? LARGE_DICTIONARY.map(s => s.toUpperCase()) : [],
+        matches: [],
+        history: [],
+        lastIndexForDisamb: null,
+        listening: false,
+        recognition: null
+      };
+
+      // ---- UI refs ----
+      const timeEl = document.getElementById('time');
+      const dateEl = document.getElementById('date');
+      const micIndicator = document.getElementById('micIndicator');
+      const footer = document.getElementById('footer');
+      const finalLine = document.getElementById('finalLine');
+      const finalWordSpan = document.getElementById('finalWord');
+      const debugEl = document.getElementById('debug');
+      const fpTitle = document.getElementById('fpTitle');
+      const fpTime = document.getElementById('fpTime');
+
+      // ---- Clock ----
+      function updateClock(){
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true }).replace(/\s(A|P)M/,'');
+        const dateStr = now.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+        timeEl.textContent = timeStr;
+        dateEl.textContent = dateStr;
+      }
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      // ---- Utility: number words -> digits (up to 3 digits) ----
+      function wordsToDigits(phrase){
+        if(!phrase) return '';
+        phrase = phrase.toLowerCase().replace(/-/g,' ').replace(/ and /g,' ');
+        const numericMatch = phrase.match(/(\d+)/);
+        if(numericMatch) return numericMatch[1].slice(0,3);
+        const small = {'zero':0,'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10,'eleven':11,'twelve':12,'thirteen':13,'fourteen':14,'fifteen':15,'sixteen':16,'seventeen':17,'eighteen':18,'nineteen':19};
+        const tens = {'twenty':20,'thirty':30,'forty':40,'fifty':50,'sixty':60,'seventy':70,'eighty':80,'ninety':90};
+        const parts = phrase.split(/\s+/);
+        let value = 0;
+        let i = 0;
+        while(i < parts.length){
+          const p = parts[i];
+          if(small[p] !== undefined){ value += small[p]; i++; }
+          else if(tens[p]){ value += tens[p]; i++; if(parts[i] && small[parts[i]]!==undefined){ value+=small[parts[i]]; i++; } }
+          else if(p === 'hundred'){ value = (value === 0 ? 1 : value) * 100; i++; }
+          else i++;
+        }
+        return String(value).slice(0,3);
+      }
+
+      // ---- Trigger map for D4 ----
+      const TRIGGERS = { 'WORD':1, 'WORDS':1, 'DIFFERENT':2, 'OPTION':3, 'OPTIONS':3 };
+
+      // ---- Parse spoken for code (number phrase before trigger) ----
+      function parseForCode(transcript){
+        const words = transcript.trim().split(/\s+/);
+        let triggerIndex = -1, triggerKey = null;
+        for(let i=words.length-1;i>=0;i--){
+          const w = words[i].replace(/[^\w]/g,'').toUpperCase();
+          if(TRIGGERS[w] !== undefined){ triggerIndex = i; triggerKey = w; break; }
+        }
+        if(triggerIndex === -1) return null;
+        const numberPhrase = words.slice(Math.max(0, triggerIndex - 6), triggerIndex).join(' ');
+        const digits = wordsToDigits(numberPhrase);
+        if(!digits) return null;
+        const padded = digits.padEnd(3,'0').slice(0,3);
+        const d1 = padded[0], d2 = padded[1], d3 = padded[2], d4 = TRIGGERS[triggerKey];
+        return { code: `${d1}${d2}${d3}${d4}`, numberPhrase, triggerWord: triggerKey };
+      }
+
+      // ---- Parse letter capture (word before "interesting") ----
+      function parseLetterBeforeInteresting(transcript){
+        const t = transcript.toLowerCase();
+        const idx = t.lastIndexOf('interesting');
+        if(idx === -1) return null;
+        const before = t.slice(0, idx).trim();
+        const ws = before.split(/\s+/);
+        if(ws.length === 0) return null;
+        const last = ws[ws.length -1].replace(/[^a-z]/gi,'');
+        if(!last) return null;
+        return last[0].toUpperCase();
+      }
+
+      // ---- Letter shape sets (capital letters) ----
+      const LETTER_SHAPES = {
+        1: new Set(['A','E','F','H','I','K','L','M','N','T','V','W','X','Y','Z']),
+        2: new Set(['B','D','G','J','P','Q','R','U','S','C']),
+        3: new Set(['O','S','C','G','Q'])
+      };
+
+      // ---- Filter dictionary by 4-digit code (D1..D4) ----
+      function filterByCode(code, baseDict){
+        if(!code || code.length !==4) return [];
+        const [a,b,c,d] = code.split('');
+        const d1 = Number(a), d2 = Number(b), d3 = Number(c), d4 = Number(d);
+        const dict = (baseDict || APP.dict).map(w=>w.toUpperCase());
+        const vowels = 'AEIOU';
+        return dict.filter(word=>{
+          const len = word.length;
+          if(len !== d1 && len !== d1 + 10) return false;
+          // vowel positions
+          const vpos = [];
+          for(let i=0;i<word.length;i++) if(vowels.includes(word[i])) vpos.push(i+1);
+          if(d2 > 0){
+            if(vpos.length < 1 || vpos[0] !== d2) return false;
+          }
+          if(d3 === 0){
+            if(vpos.length !== 1) return false;
+          } else {
+            if(vpos.length < 2 || vpos[1] !== d3) return false;
+          }
+          if(d4 > 0){
+            const first = word[0];
+            const shapeSet = LETTER_SHAPES[d4];
+            if(!shapeSet || !shapeSet.has(first)) return false;
+          }
+          return true;
+        });
+      }
+
+      // ---- Disambiguation index finder ----
+      function findBestIndex(matches){
+        if(!matches || matches.length <= 1) return { index:-1, letters:[] };
+        const minLen = Math.min(...matches.map(m=>m.length));
+        let best = -1;
+        let maxUnique = 1;
+        for(let i=0;i<minLen;i++){
+          const letters = matches.map(w => w[i]).filter(Boolean);
+          if(letters.length === 0) continue;
+          const set = new Set(letters);
+          if(set.size > maxUnique && (letters.length / matches.length) > 0.5){
+            maxUnique = set.size;
+            best = i+1;
+          }
+        }
+        if(best === -1) return { index:-1, letters:[] };
+        const letters = Array.from(new Set(matches.map(w=>w[best-1]))).sort();
+        return { index: best, letters };
+      }
+
+      // ---- Mini player / UI helpers ----
+      function showMiniPlayer(title, index){
+        footer.innerHTML = '';
+        const mp = document.createElement('div');
+        mp.className = 'mini-player';
+        const left = document.createElement('div'); left.className='title'; left.textContent = title;
+        const right = document.createElement('div'); right.className='timecode'; right.textContent = index ? `0:${String(index).padStart(2,'0')}` : '0:00';
+        mp.appendChild(left); mp.appendChild(right);
+        footer.appendChild(mp);
+        // keep center fake player updated
+        fpTitle.textContent = title;
+        fpTime.textContent = index ? `0:${String(index).padStart(2,'0')}` : '0:00';
+      }
+      function hideMiniPlayer(){ footer.innerHTML=''; fpTitle.textContent='—'; fpTime.textContent='0:00'; }
+
+      function showFinal(word){
+        finalWordSpan.textContent = word || 'xxxxx';
+        finalLine.classList.add('visible');
+        // hide after some seconds to remain discreet
+        setTimeout(()=> finalLine.classList.remove('visible'), 7000);
+      }
+
+      // ---- Speech recognition setup (explicit user start) ----
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      if(!SpeechRecognition){
+        // fallback - show debug
+        debugEl.style.display='block';
+        debugEl.textContent = 'SpeechRecognition not supported in this browser. Use Chrome/Edge on Android/desktop.';
+      } else {
+        const rec = new SpeechRecognition();
+        rec.lang = 'en-US';
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.continuous = false; // we will restart manually to loop
+        APP.recognition = rec;
+
+        rec.onstart = () => {
+          APP.listening = true;
+          micIndicator.classList.add('listening'); // subtle visible indicator in-app
+          debugEl.style.display='none';
+        };
+        rec.onend = () => {
+          APP.listening = false;
+          micIndicator.classList.remove('listening');
+          // If we haven't finalized, we may want to restart recognition automatically
+          // But restart only if still in 'active listening' mode (flag)
+          if(APP._shouldContinueListening){
+            try { rec.start(); } catch(e){ /* ignore start errors */ }
+          }
+        };
+        rec.onerror = (ev) => {
+          micIndicator.classList.remove('listening');
+          APP.listening = false;
+          debugEl.style.display='block';
+          debugEl.textContent = 'Speech error: ' + (ev.error || 'unknown');
+        };
+        rec.onresult = (ev) => {
+          const t = ev.results[0][0].transcript.trim();
+          debugEl.style.display='block';
+          debugEl.textContent = 'Transcript: ' + t;
+          processTranscript(t);
+        };
+      }
+
+      // ---- Main logic: parsing and progression ----
+      // flow:
+      // 1) user double-taps time -> start listening loop
+      // 2) app listens and looks for "number phrase + trigger word" to compute 4-digit code
+      // 3) filters dictionary -> compute best index -> show mini player (index encoded as seconds)
+      // 4) waits for user to say word+ "interesting" -> capture letter before "interesting" and refine
+      // 5) loop until single match -> show final and stop listening
+
+      function startListeningLoop(){
+        if(!APP.recognition) return;
+        APP.matches = [];
+        APP.history = [];
+        APP._shouldContinueListening = true;
+        try { APP.recognition.start(); } catch(e) { /* ignore */ }
+      }
+      function stopListeningLoop(){
+        APP._shouldContinueListening = false;
+        try { APP.recognition.stop(); } catch(e){ /* ignore */ }
+        micIndicator.classList.remove('listening');
+      }
+
+      // Processing transcript for either the code or the "interesting" letter
+      function processTranscript(t){
+        // 1. Check for code phrase
+        const codeInfo = parseForCode(t);
+        if(codeInfo){
+          // compute matches
+          const code = codeInfo.code;
+          const matches = filterByCode(code, APP.dict);
+          APP.matches = matches;
+          APP.history = [matches.slice()];
+          const dis = findBestIndex(matches);
+          APP.lastIndexForDisamb = dis.index || null;
+          showMiniPlayer('Shape of you', dis.index || 0);
+          debugEl.style.display='block';
+          debugEl.textContent = `Code ${code} → ${matches.length} matches. Index: ${dis.index||'n/a'}`;
+          // If single match, finalize
+          if(matches.length === 1){
+            showFinal(matches[0]);
+            stopListeningLoop();
+          }
+          return;
+        }
+
+        // 2. Check for "interesting" capture
+        const letter = parseLetterBeforeInteresting(t);
+        if(letter){
+          const idx = APP.lastIndexForDisamb || 1;
+          const prev = APP.matches.slice();
+          const filtered = prev.filter(w => (w[idx-1] || '') === letter);
+          APP.history.push(filtered.slice());
+          APP.matches = filtered;
+          debugEl.style.display='block';
+          debugEl.textContent = `Captured letter ${letter} at pos ${idx}. ${filtered.length} matches remain.`;
+          // If single match finalize
+          if(filtered.length === 1){
+            showFinal(filtered[0]);
+            stopListeningLoop();
+            return;
+          }
+          // Else compute next disambiguation index and continue listening
+          const dis2 = findBestIndex(filtered);
+          APP.lastIndexForDisamb = dis2.index || null;
+          showMiniPlayer('Shape of you', dis2.index || 0);
+          return;
+        }
+
+        // 3. If nothing actionable, continue listening quietly
+      }
+
+      // ---- Double-tap detection on time element ----
+      let lastTap = 0;
+      timeEl.addEventListener('touchstart', handleTap);
+      timeEl.addEventListener('click', handleTap);
+      function handleTap(e){
+        const now = Date.now();
+        if(now - lastTap < 300 && now - lastTap > 0){
+          // double-tap detected
+          if(!APP._shouldContinueListening){
+            startListeningLoop();
+          } else {
+            stopListeningLoop();
+          }
+          lastTap = 0;
+        } else {
+          lastTap = now;
+        }
+      }
+
+      // ---- initialize fallback dict if missing ----
+      if(!APP.dict || APP.dict.length === 0){
+        APP.dict = ['KANGAROO','SOHAN','MAGIC','SECRET','OPTIONAL','DIFFERENT','INTERESTING','SHAPE','YOU','EXAMPLE'];
+      }
+
+      // Expose for debugging in dev mode
+      window.MAGICAPP = {
+        APP, startListeningLoop, stopListeningLoop, parseForCode, parseLetterBeforeInteresting, wordsToDigits: window.wordsToDigits
+      };
+
+      // ---- Service worker registration (PWA) ----
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.register('sw.js').catch(e => {
+          // silent failures ok
+          console.warn('SW register failed', e);
+        });
+      }
+
+    })();
+  </script>
+</body>
+</html>
