@@ -8,7 +8,7 @@
     <!-- PWA MANIFEST LINK -->
     <link rel="manifest" href="./manifest.json">
     
-    <!-- LOCAL DICTIONARY SOURCE -->
+    <!-- LOCAL DICTIONARY SOURCE: This must be loaded first to define the global LARGE_DICTIONARY -->
     <script src="./large_dictionary.js"></script>
 
     <style>
@@ -64,6 +64,7 @@
             align-items: center;
             transition: opacity 0.5s;
             margin-top: 10px; 
+            min-height: 35px; /* Ensure space for transcript */
         }
         .notif-icon-svg {
             margin-right: 8px;
@@ -72,12 +73,14 @@
             height: 16px;
             line-height: 1;
             flex-shrink: 0;
+            transition: transform 0.5s;
         }
         .notif-text {
             font-size: 13px;
             color: #d1d1d1;
             font-weight: 500;
             word-break: break-word; 
+            line-height: 1.3;
         }
         .final-word-placeholder {
             color: #ffffff; 
@@ -85,6 +88,16 @@
             letter-spacing: 1px;
         }
         
+        /* New Listening State Styles */
+        .listening-active {
+            animation: pulse-mic 1.5s infinite;
+        }
+        @keyframes pulse-mic {
+            0% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.6; }
+        }
+
         /* --- Bottom Icons Container --- */
         #bottom-icons {
             position: absolute;
@@ -211,13 +224,15 @@
     </div>
     
     <script>
-        // Global variable LARGE_DICTIONARY is now defined by the local large_dictionary.js file.
+        // Global variable LARGE_DICTIONARY is expected to be defined by the local large_dictionary.js file loaded above.
         
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
             DOUBLE_TAP_THRESHOLD: 300, 
             LAST_TAP_TIME: 0,
+            RESTART_DELAY_MS: 50, 
+            TRANSCRIPT_DISPLAY_DURATION: 2000, // 2 seconds to show failed transcript
             
             // State Variables
             APP_STATE: 'AOD_LOCK', 
@@ -241,14 +256,17 @@
                 'OPTION': 3, 'OPTIONS': 3,
             },
 
-            // Spelled-out numbers mapping
+            // Spelled-out numbers mapping (made more comprehensive)
             NUMBER_WORDS: {
                 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 
-                'FIVE': 5, 'SIX': 6, 'SEVEN': 7, 'EIGHT': 8, 'NINE': 9
+                'FIVE': 5, 'SIX': 6, 'SEVEN': 7, 'EIGHT': 8, 'NINE': 9,
+                // Added robustness for common recognition errors
+                'WAN': 1, 'TOO': 2, 'FOR': 4, 'WON': 1,
             },
 
             // SVG Icons
             ICON_GEAR_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>`,
+            ICON_MIC_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
             ICON_CHAT_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`,
 
             // --- UI/Helper Functions ---
@@ -264,13 +282,11 @@
             updateTime() {
                 const now = new Date();
                 
-                // Get hours (0-23) and minutes
                 let hours = now.getHours();
                 const minutes = now.getMinutes().toString().padStart(2, '0');
                 
-                // Convert 24h to 12h format (1-12) without AM/PM
                 hours = hours % 12;
-                hours = hours ? hours : 12; // The hour '0' (midnight) becomes '12'
+                hours = hours ? hours : 12; 
                 
                 const time = `${hours}:${minutes}`; 
                 const date = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -279,14 +295,10 @@
                 document.getElementById('aod-date').textContent = date;
             },
 
-            isVowel(char) {
-                const upper = char.toUpperCase();
-                return ['A', 'E', 'I', 'O', 'U'].includes(upper);
-            },
-
             getVowelIndices(word) {
                 const indices = [];
                 for (let i = 0; i < word.length; i++) {
+                    // Check for uppercase vowels
                     if (word[i].toUpperCase().match(/[AEIOU]/)) {
                         indices.push(i + 1); // 1-based position
                     }
@@ -296,24 +308,49 @@
 
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
+                // Only start if we are not already listening
+                if (this.isListening) return; 
+
                 this.isListening = true;
                 this.APP_STATE = 'AOD_LISTENING';
+                this.updateListeningUI(true); // New UI call
                 try {
+                    // Attempt to stop anything lingering, then start
                     this.recognizer.stop(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session.");
                 } catch (e) {
                     this.logStatus(`Error starting recognition: ${e.message}`, true);
+                    this.isListening = false;
+                    this.updateListeningUI(false);
                 }
             },
             
             stopListening() {
                 this.isListening = false;
-                this.APP_STATE = 'AOD_DISPLAY_FINAL';
+                this.APP_STATE = 'AOD_DISPLAY_FINAL'; // Default state after processing a command
+                this.updateListeningUI(false); // New UI call
                 try {
                     this.recognizer.stop();
                     this.logStatus("Stopped continuous listening.");
                 } catch (e) {}
+            },
+
+            updateListeningUI(isActive) {
+                const notifIcon = document.getElementById('notif-icon');
+                const notifText = document.getElementById('notif-text');
+                if (isActive) {
+                    notifIcon.innerHTML = this.ICON_MIC_SVG;
+                    notifIcon.classList.add('listening-active');
+                    notifText.textContent = "Listening for Code...";
+                } else {
+                    notifIcon.classList.remove('listening-active');
+                    // Only update text/icon if we are fully resetting to the initial lock state
+                    if (this.APP_STATE === 'AOD_LOCK') {
+                        notifIcon.innerHTML = this.ICON_GEAR_SVG;
+                        notifText.textContent = "System Update Available";
+                    }
+                }
             },
 
             initVoiceRecognition() {
@@ -329,11 +366,12 @@
                 this.recognizer.interimResults = false;
                 this.recognizer.lang = 'en-US'; 
                 
-                this.recognizer.onstart = () => { this.logStatus("Recognizing..."); };
+                this.recognizer.onstart = () => { this.logStatus("Recognizing..."); this.updateListeningUI(true);};
 
                 // Auto-restart logic
                 this.recognizer.onend = () => {
-                    if (this.isListening) {
+                    // Check if we are still supposed to be listening (i.e., we didn't process a command)
+                    if (this.isListening && this.APP_STATE === 'AOD_LISTENING') {
                         setTimeout(() => {
                             if (this.isListening) {
                                 this.logStatus("Auto-restarting listening...");
@@ -341,23 +379,31 @@
                                     this.recognizer.start();
                                 } catch (e) {
                                     this.logStatus(`Restart error: ${e.message}`, true);
+                                    this.updateListeningUI(false);
                                 }
                             }
-                        }, 100); 
+                        }, this.RESTART_DELAY_MS); 
                     } else {
-                        this.logStatus("Listening ended normally.");
+                        this.logStatus("Listening ended normally/processed command.");
+                        this.updateListeningUI(false);
                     }
                 };
 
                 this.recognizer.onerror = (event) => {
-                    if (event.error !== 'no-speech' && this.isListening) {
-                         this.logStatus(`Voice Error (${event.error}). Attempting restart.`, true);
+                    this.logStatus(`Voice Error (${event.error}).`, true);
+                    if (event.error === 'network' || event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                        this.isListening = false;
+                        this.updateListeningUI(false);
                     }
                 };
                 
                 this.recognizer.onresult = (event) => {
                     const transcript = event.results[0][0].transcript.toUpperCase().trim();
-                    this.logStatus(`Transcript received: "${transcript}"`);
+                    this.logStatus(`RAW Transcript received: "${transcript}"`);
+                    
+                    // Stop the current recognition loop immediately after receiving a result
+                    this.isListening = false; 
+                    this.recognizer.stop(); 
                     
                     if (this.MATCHES.length === 0) {
                         this.handleInitialPasscode(transcript);
@@ -379,31 +425,37 @@
                 if (timeSinceLastTap < this.DOUBLE_TAP_THRESHOLD) {
                     event.preventDefault(); 
                     
-                    if (this.APP_STATE === 'AOD_LOCK' || !this.isListening) {
+                    if (this.APP_STATE === 'AOD_LOCK' || this.APP_STATE === 'AOD_DISPLAY_FINAL') {
+                        // Reset everything and start listening for a new code
+                        this.resetApp(false); 
                         if (this.recognizer) {
                             this.startListening();
                             this.LAST_TAP_TIME = 0; 
                         }
-                    } else if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
-                        this.resetApp();
-                    }
+                    } 
                 }
             },
 
-            // --- Core Logic (Unchanged filter functions) ---
+            // --- Core Logic (Filter functions) ---
             filterDictionary(d1, d2, d3, d4, initialList) {
-                if (typeof initialList === 'undefined' || initialList.length === 0) { return []; }
+                if (!Array.isArray(initialList) || initialList.length === 0) { return []; } 
+                
                 const dictionary = initialList.map(w => w.toUpperCase());
                 
                 return dictionary.filter(word => {
                     const length = word.length;
                     const vIndices = this.getVowelIndices(word);
-                    const vowelCount = vIndices.length;
                     const firstLetter = word[0];
 
                     if (length !== d1) return false;
-                    if (d2 > 0 && (vowelCount < 1 || vIndices[0] !== d2)) return false;
-                    if (d3 > 0 && (vowelCount < 2 || vIndices[1] !== d3)) return false;
+                    
+                    // D2 (First Vowel Position)
+                    if (d2 > 0 && (vIndices.length < 1 || vIndices[0] !== d2)) return false;
+                    
+                    // D3 (Second Vowel Position)
+                    if (d3 > 0 && (vIndices.length < 2 || vIndices[1] !== d3)) return false;
+                    
+                    // D4 (First Letter Shape)
                     if (d4 > 0) {
                         const shapeSet = this.LETTER_SHAPES[d4];
                         if (!shapeSet || !shapeSet.has(firstLetter)) return false;
@@ -418,6 +470,7 @@
                 let bestIndex = -1;
                 let maxUniqueLetters = 1; 
                 
+                // Iterates through positions 1 to minLength
                 for (let i = 0; i < minLength; i++) {   
                     const lettersAtPosition = matches
                         .map(word => word.length > i ? word[i] : null)
@@ -425,11 +478,13 @@
                     if (lettersAtPosition.length === 0) continue;
                     const uniqueLetters = new Set(lettersAtPosition);
 
-                    if (uniqueLetters.size > maxUniqueLetters &&   
-                        (lettersAtPosition.length / matches.length > 0.5)) {
+                    // We are looking for the position with the most unique letters
+                    if (uniqueLetters.size > maxUniqueLetters) {
                         maxUniqueLetters = uniqueLetters.size;
                         bestIndex = i + 1; 
                     }
+                    // If we find 3 or more unique letters, that's often good enough
+                    if (maxUniqueLetters >= 3) break; 
                 }
                 return bestIndex;
             },
@@ -439,57 +494,89 @@
             handleInitialPasscode(transcript) {
                 let d4 = 0;
                 let numbers = [];
-                const words = transcript.split(' ').map(w => w.trim());
-
-                // Logic to extract D1, D2, D3, and D4 from the end of the phrase
-                for (let i = words.length - 1; i >= 0; i--) {
-                    const word = words[i];
-                    const triggerValue = this.D4_TRIGGERS[word];
+                const words = transcript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
+                
+                // 1. Collect all numbers and find D4 trigger in a single pass
+                for (const w of words) {
+                    // Check for D4 trigger
+                    const triggerValue = this.D4_TRIGGERS[w];
                     if (triggerValue) {
                         d4 = triggerValue;
-                        
-                        // Parse numbers from the beginning of the phrase
-                        numbers = words.slice(0, i)
-                            .map(w => {
-                                // Check for digit (e.g., '7')
-                                if (!isNaN(parseInt(w, 10)) && w.length === 1) return Number(w); 
-                                // Check for spelled-out word (e.g., 'SEVEN')
-                                const spelled = this.NUMBER_WORDS[w];
-                                if (spelled) return spelled; 
-                                return null; // Ignore other words
-                            })
-                            .filter(n => n !== null)
-                            .reverse()
-                            .slice(0, 3)
-                            .reverse();
-                        break;
+                    }
+
+                    // Check for numeric value (spelled-out or single digit)
+                    const spelled = this.NUMBER_WORDS[w];
+                    if (spelled) {
+                        numbers.push(spelled);
+                        continue;
+                    } 
+                    
+                    // Check if the word is a string of 1, 2, or 3 digits (e.g., "724")
+                    if (w.length >= 1 && w.length <= 3 && /^\d+$/.test(w)) {
+                        // Break concatenated digits into separate numbers
+                        for (const digitChar of w) {
+                            const digit = parseInt(digitChar, 10);
+                            if (digit > 0) {
+                                numbers.push(digit);
+                            }
+                        }
+                        continue;
                     }
                 }
                 
+                // We only need the last three numbers found
+                if (numbers.length > 3) {
+                    numbers = numbers.slice(numbers.length - 3);
+                }
+
                 if (d4 === 0 || numbers.length !== 3) {
-                    this.logStatus(`Initial passcode not recognized: Digits=${numbers.length}, D4=${d4}. Continuing listening.`, false);
+                    this.logStatus(`Initial passcode failed to process. Digits found: ${numbers.length} (${numbers.join(', ')}), D4: ${d4}. Showing transcript before re-starting.`);
+                    
+                    this.showFailedTranscript(transcript);
+
+                    setTimeout(() => {
+                        this.updateListeningUI(false);
+                        this.startListening();
+                    }, this.TRANSCRIPT_DISPLAY_DURATION);
                     return; 
                 }
                 
                 const [d1, d2, d3] = numbers;
                 
-                if (typeof LARGE_DICTIONARY === 'undefined') { 
-                    this.logStatus("Dictionary not loaded. (FATAL)", true); 
+                this.logStatus(`PASSCODE PARSED: D1=${d1}, D2=${d2}, D3=${d3}, D4=${d4}`);
+
+                if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
+                    this.logStatus("Dictionary not loaded or is empty. Cannot run filter.", true); 
+                    this.resetApp(true);
                     return; 
                 }
 
                 const matches = this.filterDictionary(d1, d2, d3, d4, LARGE_DICTIONARY);
+
+                // --- STRICT MATCHING LOGIC ---
+                if (matches.length === 0) {
+                    this.logStatus("Code filtered to 0 matches. Re-starting listening for a new code.");
+                    // Immediately re-start listening without changing UI (timer remains 00, notification remains "Listening...")
+                    this.startListening(); 
+                    return; 
+                }
+                // --- END STRICT MATCHING ---
+
                 this.HISTORY = []; 
                 this.HISTORY.push(matches);
                 this.MATCHES = matches;
 
-                this.logStatus(`Code: ${d1}${d2}${d3}${d4}. Matches: ${matches.length}`);
+                this.logStatus(`Code: ${d1}${d2}${d3}${d4}. Filtered Matches: ${matches.length}`);
                 
                 this.checkMatchesAndProceed();
             },
             
             handleLetterInput(transcript) {
-                if (this.MATCHES.length <= 1 || this.CURRENT_POSITION_INDEX === 0) {
+                // Mic automatically stopped after onresult, but we restart it if we need more input
+                this.isListening = false;
+                
+                if (this.MATCHES.length <= 1) {
+                    this.startListening(); 
                     return;
                 }
                 
@@ -497,15 +584,18 @@
                 const triggerIndex = transcript.indexOf(trigger);
                 
                 if (triggerIndex === -1) {
-                    this.logStatus("No 'interesting' trigger. Continuing listening.", false);
+                    this.logStatus("No 'interesting' trigger. Re-starting listening.");
+                    this.startListening(); 
                     return;
                 }
                 
+                // Look for the last word before the trigger
                 const preTrigger = transcript.substring(0, triggerIndex).trim();
                 const preWords = preTrigger.split(' ').filter(w => w.length > 0);
                 
                 if (preWords.length === 0) {
-                    this.logStatus("No word found before 'interesting'. Continuing listening.", false);
+                    this.logStatus("No word found before 'interesting'. Re-starting listening.");
+                    this.startListening(); 
                     return;
                 }
                 
@@ -513,13 +603,14 @@
                 const magicLetter = spokenWord[0].toUpperCase();
                 const pos = this.CURRENT_POSITION_INDEX - 1; // 0-based index
 
-                // MATCHES are already guaranteed to be uppercase from the filterDictionary step
                 const filtered = this.MATCHES.filter(word => 
                     word.length > pos && word[pos] === magicLetter
                 );
 
                 if (filtered.length === 0) {
-                    this.logStatus(`Filter failed: Letter '${magicLetter}' at position ${this.CURRENT_POSITION_INDEX} yielded 0 matches. Reverting to previous list.`, true);
+                    this.logStatus(`Filter failed: Letter '${magicLetter}' at position ${this.CURRENT_POSITION_INDEX} yielded 0 matches. Reverting to previous list.`);
+                    this.showFailedTranscript(transcript);
+                    setTimeout(() => this.checkMatchesAndProceed(), this.TRANSCRIPT_DISPLAY_DURATION);
                     return;
                 }
 
@@ -531,24 +622,39 @@
             },
 
             // --- State and UI Update ---
+            showFailedTranscript(transcript) {
+                const notifIcon = document.getElementById('notif-icon');
+                const notifText = document.getElementById('notif-text');
+                
+                notifIcon.innerHTML = this.ICON_MIC_SVG; 
+                notifIcon.classList.remove('listening-active');
+
+                notifText.innerHTML = `<span style="color: #F8F8F8; font-weight: 700;">DIDN'T PARSE:</span> ${transcript.toLowerCase()}`;
+            },
+
             updateNotification(status) {
                 const notifIcon = document.getElementById('notif-icon');
                 const notifText = document.getElementById('notif-text');
+                const currentSecond = document.getElementById('current-second');
 
                 if (status === 'FINAL') {
                     const finalWord = this.MATCHES[0];
+                    this.stopListening(); // Fully stop recognition
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     notifText.innerHTML = `Sohan wants <span class="final-word-placeholder">${finalWord}</span> to...`;
+                    currentSecond.textContent = '00';
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
-                    // Display the words, converting them back to lowercase for the discreet "shopping list" look
                     const displayWords = this.MATCHES.slice(0, 4).map(w => w.toLowerCase()).join(', ');
                     const moreText = this.MATCHES.length > 4 ? ` (+${this.MATCHES.length - 4})` : '';
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
-                    notifText.innerHTML = `To buy ${displayWords}${moreText}`;
-                } else {
-                    // Initial or Error State
-                    notifIcon.innerHTML = this.ICON_GEAR_SVG;
+                    notifText.innerHTML = `To buy: ${displayWords}${moreText}`;
+                    
+                    // Restart listening for the next letter input (D5, D6, etc.)
+                    this.startListening(); 
+
+                } else if (status === 'INITIAL') {
+                    this.updateListeningUI(false);
                     notifText.textContent = "System Update Available";
                 }
             },
@@ -556,48 +662,49 @@
             checkMatchesAndProceed() {
                 
                 if (this.MATCHES.length === 1) {
-                    // --- Final State ---
-                    this.stopListening();
-                    this.CURRENT_POSITION_INDEX = 0; 
+                    this.APP_STATE = 'AOD_DISPLAY_FINAL';
                     this.updateNotification('FINAL');
-                    // Reset Spotify widget to 0:00 after reveal
-                    document.getElementById('current-second').textContent = '00';
                     this.logStatus(`FINAL WORD FOUND: ${this.MATCHES[0]}`);
                     
                 } else if (this.MATCHES.length > 1) {
-                    // --- Disambiguation State ---
                     const bestIndex = this.getDisambiguationIndex(this.MATCHES);
 
                     if (bestIndex === -1) {
-                        this.logStatus(`Ambiguous State: ${this.MATCHES.length} matches. Cannot proceed. Magician must force word.`, true);
-                        this.stopListening(); 
-                        this.CURRENT_POSITION_INDEX = 0;
-                        this.updateNotification('WORD_LIST');
+                        this.logStatus(`Ambiguous State: ${this.MATCHES.length} matches. Cannot proceed beyond current filter.`, true);
+                        this.CURRENT_POSITION_INDEX = 0; // Reset position, but keep list
+                        this.updateNotification('WORD_LIST'); // Display list and restart mic
                         return;
                     }
                     
                     this.CURRENT_POSITION_INDEX = bestIndex;
                     
-                    // Update Music Player (0:XX)
+                    // Update Music Player (0:XX) to the required disambiguation position
                     document.getElementById('current-second').textContent = bestIndex.toString().padStart(2, '0');
                     
-                    this.updateNotification('WORD_LIST');
+                    this.updateNotification('WORD_LIST'); // Display list and restart mic
                     
                 } else {
-                    // --- No Matches / Error State ---
-                    this.resetApp();
+                    // This path should ideally not be hit if handleInitialPasscode/handleLetterInput works correctly
+                    this.resetApp(true);
                 }
             },
             
-            resetApp() {
+            resetApp(returnToLock = true) {
                 this.stopListening();
                 this.MATCHES = [];
                 this.HISTORY = [];
                 this.CURRENT_POSITION_INDEX = 0;
-                this.updateNotification('INITIAL');
                 document.getElementById('current-second').textContent = '00';
-                this.APP_STATE = 'AOD_LOCK';
-                this.logStatus("App reset to AOD_LOCK state.");
+                
+                if (returnToLock) {
+                    this.APP_STATE = 'AOD_LOCK';
+                    this.updateNotification('INITIAL');
+                    this.logStatus("App reset to AOD_LOCK state.");
+                } else {
+                    // Prepares for a new voice command without going back to "System Update Available"
+                    this.APP_STATE = 'AOD_LISTENING';
+                    this.logStatus("App state cleared, ready for new voice input.");
+                }
             },
             
             // --- PWA Service Worker Registration ---
@@ -613,7 +720,6 @@
 
             // --- Initialization ---
             init() {
-                // Check dictionary status 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
                     this.logStatus("FATAL: Dictionary not accessible or is empty. Functionality limited.", true);
                     document.getElementById('notif-text').textContent = "ERROR: DICT NOT AVAILABLE";
@@ -625,15 +731,11 @@
                 this.updateTime();
                 setInterval(() => this.updateTime(), 1000);   
                 
-                // Attach double-tap listener to the time display element
                 const timeElement = document.getElementById('aod-time');
                 timeElement.addEventListener('click', (e) => this.handleDoubleTap(e));
                 timeElement.addEventListener('touchstart', (e) => this.handleDoubleTap(e));
                 
-                // Set initial icon appearance
-                document.getElementById('notif-icon').innerHTML = this.ICON_GEAR_SVG;
-                
-                // Register PWA Service Worker
+                this.updateNotification('INITIAL');
                 this.registerServiceWorker();
             }
         };
