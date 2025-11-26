@@ -272,7 +272,8 @@
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
-            RESTART_DELAY_MS: 100, 
+            // MINIMAL RESTART DELAY: Set to 10ms for instant restart after command processing.
+            RESTART_DELAY_MS: 10, 
             SESSION_KEY: 'aod_magic_state',
             
             // State Variables
@@ -290,11 +291,12 @@
                 3: new Set('COS'.split('')),             // Circular/Round shapes
             },
 
-            // D4 Trigger Words (1 = Word/Walk, 2 = Different, 3 = Option)
+            // D4 Trigger Words (1 = Word/Walk/Watch, 2 = Different, 3 = Option)
             D4_TRIGGERS: {
                 'WORD': 1, 'WORDS': 1,
                 'WALK': 1, 
                 'WATT': 1, 'WATTS': 1, 
+                'WATCH': 1, 
                 'DIFFERENT': 2,
                 'OPTION': 3, 'OPTIONS': 3,
             },
@@ -309,13 +311,13 @@
                 
                 // Homophones and common phonetic errors
                 'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
-                'WATCH': 1, 
                 'TO': 2, 'TOO': 2, 'THROUGH': 2, 'BLUE': 2, 'BLEW': 2, 
                 'TREE': 3, 'FREE': 3, 
                 'FOR': 4, 
                 'FINE': 5, 
                 'SEX': 6, 
                 'ATE': 8, 'EIGHT': 8, 'I': 8, 'EYE': 8, 'HEIGHT': 8, 
+                'IT': 8, 
             },
 
             // SVG Icons
@@ -368,7 +370,6 @@
             
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
-                // Prevents redundant starts and attempts to restart if mic is down (the core fix)
                 if (this.isListening) {
                     if (this.recognizer) {
                         this.logStatus("Attempted to start listening, but already active. Current lang: " + this.recognizer.lang);
@@ -388,7 +389,7 @@
                         this.isListening = false;
                         return;
                     }
-                    this.recognizer.abort(); // Clear any potentially stuck session
+                    this.recognizer.abort(); // Clear any potentially stuck session before restarting
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
@@ -434,7 +435,8 @@
                 }
                 
                 this.recognizer = new SpeechRecognition();
-                this.recognizer.continuous = false; 
+                // continuous = true allows for longer pauses within a thought/sentence.
+                this.recognizer.continuous = true; 
                 this.recognizer.interimResults = false;
                 this.recognizer.lang = 'en-US'; 
                 this.logStatus("Voice Recognizer initialized. Target language: " + this.recognizer.lang);
@@ -449,8 +451,8 @@
                     this.isListening = false; 
 
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                        this.logStatus("Listening session ended (no result/timeout). Restarting...");
-                        // Automatically restart listening session after a short delay
+                        // Restart handles the loop, set to MINIMAL delay for instant transition.
+                        this.logStatus(`Listening session ended. Restarting instantly (${this.RESTART_DELAY_MS}ms delay)...`);
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
@@ -479,6 +481,12 @@
                     }
 
                     this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
+                    
+                    // CRITICAL: Manually stop the continuous session after receiving a result.
+                    // This forces onend to fire, which then restarts the mic. This is necessary 
+                    // to ensure the next command (the letter) starts a fresh, distinct session.
+                    this.logStatus("Result received. Stopping session for processing and instant restart.");
+                    this.recognizer.abort(); 
 
                     if (this.MATCHES.length === 0) {
                         this.handleInitialPasscode(upperTranscript);
@@ -519,12 +527,18 @@
             },
 
             /**
-             * Single Tap: If the mic is not currently listening (e.g., failed restart),
-             * a single tap on the clock area forces a manual restart.
+             * Single Tap: Fixes issue 3 (Mic doesn't restart after browser reopen).
+             * We ensure isListening is reset if the recognizer is dead, allowing startListening to run.
              */
             handleSingleTap(event) {
+                // 3. FIX: Check if the recognizer instance exists but is closed (stale state after suspension/reopen)
+                // If it is, force a reset of the isListening flag to enable the restart logic below.
+                if (this.recognizer && this.recognizer.readyState === 'closed') {
+                    this.isListening = false;
+                }
+
                 if (!this.isListening && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                    this.logStatus("Single Tap: Forcing mic restart.");
+                    this.logStatus("Single Tap: Forcing mic restart (Manual Recovery).");
                     this.startListening(); 
                 } else {
                     this.logStatus("Single Tap: Mic already active or in final state (Ignored).");
@@ -616,24 +630,37 @@
                 let d4 = 0;
                 let numbers = [];
                 // Clean up punctuation and split words
-                const words = transcript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(' ').map(w => w.trim()).filter(w => w.length > 0);
+                const rawWords = transcript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
                 
-                for (const w of words) {
-                    const triggerValue = this.D4_TRIGGERS[w];
+                for (const w of rawWords) {
+                    const cleanWord = w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").toUpperCase();
+                    
+                    // 1. Check D4 Trigger (use the clean word)
+                    const triggerValue = this.D4_TRIGGERS[cleanWord];
                     if (triggerValue) { d4 = triggerValue; }
 
-                    const spelled = this.NUMBER_WORDS[w];
+                    // 2. Check for number words (use the clean word)
+                    // Treat "DOT" or "POINT" as the number 1
+                    if (cleanWord === 'DOT' || cleanWord === 'POINT') {
+                        numbers.push(1);
+                        continue;
+                    }
+                    const spelled = this.NUMBER_WORDS[cleanWord];
                     if (spelled) {
                         numbers.push(spelled);
                         continue;
                     } 
                     
-                    // Check for raw digits
-                    if (/^\d{1,4}$/.test(w)) {
-                        for (const digitChar of w) {
-                            const digit = parseInt(digitChar, 10);
-                            if (digit >= 1 && digit <= 9) {
-                                numbers.push(digit);
+                    // 3. Check for raw digits or floating point numbers (use the raw word)
+                    if (/^\d+(\.\d+)?$/.test(w)) {
+                        for (const char of w) {
+                            if (char === '.') {
+                                numbers.push(1); // '.' is interpreted as 1
+                            } else {
+                                const digit = parseInt(char, 10);
+                                if (digit >= 1 && digit <= 9) {
+                                    numbers.push(digit);
+                                }
                             }
                         }
                         continue;
@@ -780,7 +807,7 @@
                         this.APP_STATE = 'AOD_LOCK';
                         this.updateListeningUI(false); 
                     } else {
-                        this.APP_STATE = 'AOD_LISTENING';
+                        this.APP_STATE = 'AOD_LISTENING'; 
                         this.updateListeningUI(true);
                     }
                 }
@@ -886,7 +913,7 @@
                         APP.handleDoubleTap(e);
                         lastTap = 0; 
                     } else {
-                        // Single Tap (Mic Restart - the core fix)
+                        // Single Tap (Mic Restart - the core fix for resume/reopen)
                         APP.handleSingleTap(e); 
                     }
                     lastTap = now;
