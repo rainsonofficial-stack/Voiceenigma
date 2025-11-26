@@ -33,7 +33,9 @@
             user-select: none;
             color: #c4c4c4; 
             box-sizing: border-box;
-            padding: 30px 0; 
+            /* CHANGED: Increased padding-top to bring content lower */
+            padding-top: 180px; 
+            padding-bottom: 30px; 
         }
         
         /* Container for Tap Area */
@@ -654,13 +656,13 @@
                     const triggerValue = this.D4_TRIGGERS[cleanWord];
                     if (triggerValue) { d4 = triggerValue; }
                     
-                    // --- NEW DUAL CHECK (D2=1, D3=2) ---
+                    // --- DUAL CHECK (D2=1, D3=2) ---
                     if (cleanWord === 'DUAL') {
                         numbers.push(1);
                         numbers.push(2);
                         continue;
                     }
-                    // --- END NEW DUAL CHECK ---
+                    // --- END DUAL CHECK ---
 
                     // 2. Check for number words (use the clean word)
                     // Treat "DOT" or "POINT" as the number 1
@@ -766,7 +768,7 @@
                 }
                 
                 const preTrigger = transcript.substring(0, triggerIndex).trim();
-                const preWords = preTrigger.split(' ').filter(w => w.length > 0);
+                const preWords = preWords.split(' ').filter(w => w.length > 0);
                 
                 if (preWords.length === 0) {
                     this.logStatus("No word found before 'interesting'. Ignoring input.");
