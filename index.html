@@ -934,10 +934,19 @@
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        // This points to your external sw.js file
-                        navigator.serviceWorker.register('./sw.js') 
-                            .then(reg => this.logStatus('Service Worker registration successful.'))
-                            .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}`, true));
+                        // FIX FOR GITHUB PAGES SUBPATH: Use scope: './' to force the SW to control the entire app directory
+                        navigator.serviceWorker.register('./sw.js', { scope: './' }) 
+                            .then(reg => {
+                                this.logStatus('Service Worker registration successful.');
+                                if (reg.installing) {
+                                    this.logStatus('SW state: Installing');
+                                } else if (reg.waiting) {
+                                    this.logStatus('SW state: Waiting');
+                                } else if (reg.active) {
+                                    this.logStatus('SW state: Active');
+                                }
+                            })
+                            .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}. Check console for path errors.`, true));
                     });
                 }
             },
