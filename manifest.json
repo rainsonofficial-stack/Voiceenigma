@@ -1,8 +1,11 @@
 {
-    "name": "AOD setting",
-    "short_name": "AOD setting",
+    "name": "AOD Setting",
+    "short_name": "AOD Setting",
     "description": "A discreet voice command PWA disguised as an Always-On Display clock.",
-    "start_url": "./index.html",
+    
+    <!-- CRITICAL FIX: Explicitly setting the start_url for GitHub Pages subpath -->
+    "start_url": "/Voiceenigma/index.html",
+    
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
