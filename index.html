@@ -8,8 +8,24 @@
     <!-- PWA MANIFEST LINK: Assuming sw.js and manifest.json exist -->
     <link rel="manifest" href="./manifest.json">
     
-    <!-- LOCAL DICTIONARY SOURCE: This must be loaded first to define the global LARGE_DICTIONARY -->
-    <script src="./large_dictionary.js"></script>
+    <!-- 
+        LOCAL DICTIONARY SOURCE: 
+        In a real environment, large_dictionary.js would contain a global 
+        variable named LARGE_DICTIONARY (an array of strings).
+    -->
+    <script>
+        // Mock LARGE_DICTIONARY for self-contained, runnable example. 
+        // In the Canvas environment, this would be loaded from a separate file.
+        const LARGE_DICTIONARY = [
+            "APPLE", "PEAR", "GRAPE", "BERRY", "LEMON", "LIME", "PEACH", 
+            "PLUM", "KIWI", "MANGO", "ORANGE", "CHERRY", "MELON", "BANANA", 
+            "PINEAPPLE", "APRICOT", "AVOCADO", "TOMATO", "POTATO", "RADISH",
+            "ONION", "GARLIC", "CARROT", "CELERY", "CUCUMBER", "ZUCCHINI", 
+            "BROCCOLI", "SPINACH", "CABBAGE", "BEANS", "PEAS", "ASPARAGUS",
+            "MUSHROOM", "PUMPKIN", "SQUASH", "KALE", "LETTUCE", "TURNIP",
+            "MUSTARD", "OATS", "RICE", "WHEAT", "BARLEY", "RYE", "MILLET"
+        ];
+    </script>
 
     <style>
         /* AOD Styling (Dark, Minimal, Discreet) */
@@ -264,7 +280,7 @@
     </div>
     
     <script>
-        // Global variable LARGE_DICTIONARY is expected to be defined by the local large_dictionary.js file loaded above.
+        // Global variable LARGE_DICTIONARY is defined above in a mock script block.
         
         const APP = {
             // Configuration
@@ -282,8 +298,11 @@
 
             // D4 Shape Definitions
             LETTER_SHAPES: {
+                // 1: Straight lines/corners
                 1: new Set('AEFHIKLMNTVWXYZ'.split('')), 
+                // 2: Curved/Mixed lines
                 2: new Set('BDGJPRU'.split('')), 
+                // 3: Circular/Round shapes
                 3: new Set('COS'.split('')), 
             },
 
@@ -304,14 +323,14 @@
                 'TEN': 1, 'ELEVEN': 1, 'TWELVE': 2, 'THIRTEEN': 3, 'FOURTEEN': 4,
                 'FIFTEEN': 5, 'SIXTEEN': 6, 'SEVENTEEN': 7, 'EIGHTEEN': 8, 'NINETEEN': 9,
                 
-                // Homophones and common phonetic errors
-                'WAN': 1, 'WON': 1,
-                'TO': 2, 'TOO': 2, 
-                'TREE': 3, 
+                // Homophones and common phonetic errors (UPDATED FOR ROBUSTNESS)
+                'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, // Added WONDER
+                'TO': 2, 'TOO': 2, 'THROUGH': 2, 'BLUE': 2, 'BLEW': 2, // Added BLUE, BLEW
+                'TREE': 3, 'FREE': 3, // Added FREE
                 'FOR': 4, 
                 'FINE': 5, 
                 'SEX': 6, 
-                'ATE': 8, 
+                'ATE': 8, 'EIGHT': 8, 'I': 8, 'EYE': 8, 'HEIGHT': 8, 
             },
 
             // SVG Icons
@@ -514,25 +533,23 @@
 
             // Single-tap start (soft restart if in lock state)
             handleSingleTap(event) {
-                // event.preventDefault(); // Handled in touch handler
                 if (this.APP_STATE === 'AOD_LOCK') {
                     this.logStatus("Single Tap: Mic inactive/locked. Restarting listening.");
                     this.startListening(); 
                 } else {
-                    this.logStatus("Single Tap: Mic already active or in final state.");
+                    this.logStatus("Single Tap: Mic already active or in final state (Ignored).");
                 }
             },
 
             // Master reset on double-tap 
             handleDoubleTap(event) {
-                // event.preventDefault(); // Handled in touch handler
                 this.logStatus("Double Tap: Master Reset.");
                 this.resetApp(true); 
             },
             
             // Toggle Transcript Widget
             toggleTranscriptWidget(event) {
-                // Ignore double taps on the clock container as that is the master reset
+                // Ignore double clicks on the clock container as that is the master reset
                 if (event.target.closest('#clock-container') || event.target.closest('#music-player')) {
                     return; 
                 }
@@ -557,6 +574,7 @@
                     const vIndices = this.getVowelIndices(word);
                     const firstLetter = word[0];
 
+                    // D1 (Word Length)
                     if (length !== d1) return false;
                     
                     // D2 (First Vowel Position)
@@ -751,7 +769,7 @@
                     notifText.textContent = "Update not available"; 
                     currentSecond.textContent = '00';
                     
-                    // Add debug message to transcript widget
+                    // Add debug message to transcript widget (IMPROVEMENT)
                     if (widget) {
                         widget.textContent += '\n\n>>> CODE FAILED (0 matches). Listening for new code...';
                         widget.scrollTop = widget.scrollHeight; 
@@ -838,9 +856,10 @@
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        navigator.serviceWorker.register('./sw.js')
+                        // NOTE: In this single file, sw.js is not present, so this will log an error.
+                        navigator.serviceWorker.register('./sw.js') 
                             .then(reg => this.logStatus('Service Worker registered.'))
-                            .catch(err => this.logStatus(`Service Worker registration failed: ${err}`, true));
+                            .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}`, true));
                     });
                 }
             },
@@ -861,35 +880,23 @@
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
                 
-                // --- NEW ROBUST TOUCH LOGIC FOR SINGLE/DOUBLE TAP ON CLOCK AREA ---
-                let lastTapTime = 0;
-                const DOUBLE_TAP_THRESHOLD = 300; // milliseconds
+                // --- SIMPLIFIED INTERACTION LOGIC ---
 
-                clockContainer.addEventListener('touchstart', (e) => {
-                    e.preventDefault(); // Prevents browser from handling it as a simple click
-                    const currentTime = new Date().getTime();
-                    const timeDifference = currentTime - lastTapTime;
-
-                    if (timeDifference < DOUBLE_TAP_THRESHOLD && timeDifference > 0) {
-                        // Double Tap Detected (Master Reset)
-                        this.logStatus("Touch Double Tap detected on Clock Area.");
-                        this.handleDoubleTap(e);
-                        lastTapTime = 0; // Reset timer to prevent accidental multi-taps
-                    } else {
-                        // Single Tap Candidate
-                        lastTapTime = currentTime;
-                        // Start a timeout to execute single tap logic if no second tap occurs
-                        setTimeout(() => {
-                            if (lastTapTime === currentTime) { // Check if timer hasn't been reset by a double tap
-                                this.logStatus("Touch Single Tap detected on Clock Area.");
-                                this.handleSingleTap(e);
-                            }
-                        }, DOUBLE_TAP_THRESHOLD);
-                    }
-                }, {passive: false});
+                // Single Tap/Click on Clock Area to activate mic (handleSingleTap)
+                // This is the gesture that must start the mic, so we attach it directly.
+                clockContainer.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.handleSingleTap(e);
+                });
+                
+                // Double Tap on Clock Area to perform Master Reset (handleDoubleTap)
+                clockContainer.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    this.handleDoubleTap(e);
+                });
 
 
-                // Double tap on app body to toggle transcript widget (using dblclick for simplicity on the large body)
+                // Double tap on app body (outside clock/player) to toggle transcript widget
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
                 
                 // Set initial text for the clean widget
