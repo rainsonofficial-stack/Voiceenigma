@@ -327,6 +327,38 @@
             ICON_GEAR_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>`,
             ICON_CHAT_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`,
 
+            // --- Normalization Fix (New Function) ---
+            /**
+             * CRITICAL FIX: Cleans and stabilizes the raw voice transcript.
+             * It combines fragmented numbers (e.g., "500 13", "800 23") into single numbers ("513", "823") 
+             * and strips common noise words for consistent parsing.
+             * @param {string} transcript The raw string output from the speech recognition engine.
+             * @returns {string} The cleaned and normalized transcript (UPPERCASE).
+             */
+            normalizeTranscript(transcript) {
+                // 1. Convert to lowercase and trim
+                let normalized = transcript.toLowerCase().trim();
+
+                // 2. Strip common noise words and replace multiple spaces with a single one
+                // This removes the user's reported noise: "more than 10000 the key" and "colour"
+                normalized = normalized.replace(/more than \d+ the key|colour|key|the|a|\./g, '').trim();
+                normalized = normalized.replace(/\s\s+/g, ' ');
+
+                // 3. FIX: Regular Expression to combine fragmented hundreds/tens
+                // Pattern: (\d{3})\s+(\d{1,2}) (e.g., "500 13", "800 23")
+                const fragmentedNumberRegex = /(\d{3})\s+(\d{1,2})/g;
+
+                normalized = normalized.replace(fragmentedNumberRegex, (match, hundreds, tensOnes) => {
+                    // Example: "500" + "13" -> 513
+                    // This handles 500 13 -> 513, 800 23 -> 823, etc.
+                    const combined = parseInt(hundreds, 10) + parseInt(tensOnes, 10);
+                    return combined.toString(); 
+                });
+
+                return normalized.toUpperCase(); // Ensure output is uppercase for existing handlers
+            },
+
+
             // --- State Persistence ---
             saveState() {
                 try {
@@ -646,15 +678,19 @@
             // --- Handlers ---
             
             handleInitialPasscode(transcript) {
+                // --- FIX INTEGRATION: Normalize the transcript first ---
+                const normalizedTranscript = this.normalizeTranscript(transcript);
+                this.logStatus(`Normalized Transcript (Fix applied): "${normalizedTranscript}"`);
+                
                 let d4 = 0;
                 let numbers = [];
-                // Clean up punctuation and split words
-                const rawWords = transcript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
+                // Use the normalized transcript for parsing.
+                const normalizedWords = normalizedTranscript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
                 
-                for (const w of rawWords) {
+                for (const w of normalizedWords) {
                     const cleanWord = w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").toUpperCase();
                     
-                    // 1. Check D4 Trigger (use the clean word)
+                    // 1. Check D4 Trigger
                     const triggerValue = this.D4_TRIGGERS[cleanWord];
                     if (triggerValue) { d4 = triggerValue; }
                     
@@ -666,27 +702,23 @@
                     }
                     // --- END DUAL CHECK ---
 
-                    // 2. Check for number words (use the clean word)
-                    // Treat "DOT" or "POINT" as the number 1
-                    if (cleanWord === 'DOT' || cleanWord === 'POINT') {
-                        numbers.push(1);
-                        continue;
-                    }
+                    // 2. Check for number words (spelled out numbers)
                     const spelled = this.NUMBER_WORDS[cleanWord];
-                    if (spelled !== undefined) { // Check for undefined (allows 0)
+                    if (spelled !== undefined) { 
                         numbers.push(spelled);
                         continue;
                     } 
                     
-                    // 3. Check for raw digits or floating point numbers (use the raw word)
-                    if (/^\d+(\.\d+)?$/.test(w)) {
-                        // Handle cases like '924' being transcribed as one word
+                    // 3. Check for raw digits (which now includes the combined 3-digit number like '513'
+                    // due to the normalization fix)
+                    if (/^\d+(\.\d+)?$/.test(w)) { // Use original word token 'w' from normalizedWords
+                        // This handles combined numbers (like '513') and splits them into single digits (5, 1, 3)
                         for (const char of w) {
                             if (char === '.') {
                                 numbers.push(1); // '.' is interpreted as 1
                             } else {
                                 const digit = parseInt(char, 10);
-                                if (digit >= 0 && digit <= 9) { // NOW accepts 0
+                                if (digit >= 0 && digit <= 9) { 
                                     numbers.push(digit);
                                 }
                             }
