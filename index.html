@@ -8,6 +8,9 @@
     <!-- Loads the manifest file -->
     <link rel="manifest" href="./manifest.json">
     
+    <!-- IMPORTANT iOS Requirement (for 180x180 high-res home screen icon) -->
+    <link rel="apple-touch-icon" href="/icon-180x180.png">
+    
     <!-- Loads external CSS for styling -->
     <style>
         /* AOD Styling (Minimal, Discreet, Dark) */
@@ -211,6 +214,33 @@
             cursor: pointer;
             flex-shrink: 0;
         }
+        
+        /* Style for the Install Button */
+        #install-button {
+            background: rgba(60, 200, 100, 0.7); /* Green/Teal */
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 12px;
+            width: auto;
+            min-width: 100px;
+            padding: 8px 15px;
+            border-radius: 8px;
+            position: absolute; /* Place it outside the bottom-icons for now */
+            bottom: 100px; /* Position above the bottom bar */
+            left: 50%;
+            transform: translateX(-50%);
+            display: none; /* Initially hidden */
+            z-index: 20;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #install-button:active {
+            transform: translateX(-50%) scale(0.98);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -228,6 +258,11 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>
             </div>
             <div class="notif-text" id="notif-text">System Update Available</div>
+        </div>
+
+        <!-- Install Button (Hidden by default) -->
+        <div id="install-button" title="Install the app to your home screen">
+            Install App
         </div>
 
         <!-- Debug Transcript Widget -->
@@ -283,6 +318,8 @@
             HISTORY: [], 
             CURRENT_POSITION_INDEX: 0, 
             recognizer: null,
+            // PWA Install Prompt State
+            deferredInstallPrompt: null,
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
@@ -563,6 +600,27 @@
                     const isHidden = widget.style.display === 'none' || widget.style.display === '';
                     widget.style.display = isHidden ? 'block' : 'none';
                     this.logStatus(`Transcript widget ${isHidden ? 'shown' : 'hidden'}.`);
+                }
+            },
+            
+            // --- PWA Installation Handler ---
+            handleInstallClick() {
+                const installButton = document.getElementById('install-button');
+
+                if (this.deferredInstallPrompt) {
+                    this.deferredInstallPrompt.prompt();
+
+                    this.deferredInstallPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            this.logStatus('PWA installation accepted by user.');
+                        } else {
+                            this.logStatus('PWA installation dismissed by user.');
+                        }
+                        this.deferredInstallPrompt = null;
+                        installButton.style.display = 'none'; // Hide button after prompt is used
+                    });
+                } else {
+                    this.logStatus("Install prompt not ready or already used.", true);
                 }
             },
 
@@ -899,6 +957,21 @@
                 
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
+                const installButton = document.getElementById('install-button');
+                
+                // 1. PWA INSTALL LISTENER (CRITICAL FOR MANUAL PROMPT)
+                window.addEventListener('beforeinstallprompt', (e) => {
+                    e.preventDefault();
+                    this.deferredInstallPrompt = e;
+                    installButton.style.display = 'block'; // Show the manual install button
+                    this.logStatus("Install prompt detected. Button shown.");
+                });
+                
+                // 2. PWA INSTALL BUTTON HANDLER
+                installButton.addEventListener('click', () => this.handleInstallClick());
+
+
+                // 3. VOICE INPUT HANDLERS
                 
                 // Robust Mobile Touch Handling for Single/Double Tap
                 let lastTap = 0;
