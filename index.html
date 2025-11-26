@@ -33,7 +33,7 @@
             user-select: none;
             color: #c4c4c4; 
             box-sizing: border-box;
-            /* CHANGED: Increased padding-top to bring content lower */
+            /* Position adjusted in previous step */
             padding-top: 180px; 
             padding-bottom: 30px; 
         }
@@ -314,7 +314,7 @@
                 
                 // Homophones and common phonetic errors
                 'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
-                // Removed all homophones for TWO per user request sensitivity
+                'TO': 2, 'TOO': 2, // <-- ADDED: Explicitly map 'TO' and 'TOO' to 2 for robustness
                 'TREE': 3, 'FREE': 3, 
                 'FOR': 4, 
                 'FINE': 5, 
