@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aod-magic-cache-v3'; // Bumped cache version to force update of large_dictionary.js
+const CACHE_NAME = 'aod-magic-cache-v4'; // Bumped cache version to force update of large_dictionary.js
 const urlsToCache = [
     './index.html',
     './manifest.json',
