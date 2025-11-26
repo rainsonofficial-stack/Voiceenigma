@@ -504,6 +504,7 @@ const LARGE_DICTIONARY = [
   "paperclip",
   "papercup",
   "paperweight",
+  "parachute",
   "parrot",
   "parrottoy",
   "passport",
