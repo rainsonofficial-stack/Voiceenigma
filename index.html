@@ -5,30 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>OS | AOD Discreet Magic</title>
     
-    <!-- PWA MANIFEST LINK: Assuming sw.js and manifest.json exist -->
+    <!-- Loads the manifest file -->
     <link rel="manifest" href="./manifest.json">
     
-    <!-- 
-        LOCAL DICTIONARY SOURCE: 
-        In a real environment, large_dictionary.js would contain a global 
-        variable named LARGE_DICTIONARY (an array of strings).
-    -->
-    <script>
-        // Mock LARGE_DICTIONARY for self-contained, runnable example. 
-        // In the Canvas environment, this would be loaded from a separate file.
-        const LARGE_DICTIONARY = [
-            "APPLE", "PEAR", "GRAPE", "BERRY", "LEMON", "LIME", "PEACH", 
-            "PLUM", "KIWI", "MANGO", "ORANGE", "CHERRY", "MELON", "BANANA", 
-            "PINEAPPLE", "APRICOT", "AVOCADO", "TOMATO", "POTATO", "RADISH",
-            "ONION", "GARLIC", "CARROT", "CELERY", "CUCUMBER", "ZUCCHINI", 
-            "BROCCOLI", "SPINACH", "CABBAGE", "BEANS", "PEAS", "ASPARAGUS",
-            "MUSHROOM", "PUMPKIN", "SQUASH", "KALE", "LETTUCE", "TURNIP",
-            "MUSTARD", "OATS", "RICE", "WHEAT", "BARLEY", "RYE", "MILLET"
-        ];
-    </script>
-
+    <!-- Loads external CSS for styling -->
     <style>
-        /* AOD Styling (Dark, Minimal, Discreet) */
+        /* AOD Styling (Minimal, Discreet, Dark) */
         html, body {
             margin: 0;
             padding: 0;
@@ -54,33 +36,35 @@
             padding: 30px 0; 
         }
         
-        /* New Container for Tap Area (Now handling robust touch events) */
+        /* Container for Tap Area */
         #clock-container {
             display: flex;
             flex-direction: column;
             align-items: center;
-            cursor: pointer; /* Indicate it's clickable */
             z-index: 10;
-            /* Added padding to ensure large, easy-to-tap area */
             padding: 20px; 
             margin: -20px; 
+            -webkit-tap-highlight-color: transparent; 
+            outline: none; 
         }
 
-        /* Clock Widget - ENSURING VISIBILITY */
+        /* Clock Widget */
         .time-display {
             font-size: 80px;
             font-weight: 300;
             margin-bottom: 5px;
             color: #ffffff; 
+            -webkit-tap-highlight-color: transparent; 
         }
         .date-display {
             font-size: 16px;
             font-weight: 400;
             margin-bottom: 25px;
             color: #c4c4c4; 
+            -webkit-tap-highlight-color: transparent;
         }
 
-        /* --- Notification Bar (Discreet Shopping List / Final Word) --- */
+        /* --- Notification Bar --- */
         #system-notification {
             width: 90%;
             max-width: 300px; 
@@ -123,21 +107,21 @@
             width: 90%;
             max-width: 400px;
             background: rgba(40, 42, 45, 0.8);
-            color: #d1d1d1; /* Grayish white */
+            color: #d1d1d1; 
             font-size: 10px;
             padding: 8px;
             margin: 15px 0;
             border-radius: 6px;
             max-height: 150px;
             overflow-y: auto;
-            display: none; /* Start hidden */
+            display: none; 
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
             line-height: 1.4;
             flex-shrink: 0;
             white-space: pre-wrap;
         }
 
-        /* Listening State Styles: Only the pulse animation remains visible */
+        /* Listening State Styles */
         .listening-active {
             animation: pulse-mic 1.5s infinite;
         }
@@ -227,7 +211,6 @@
             cursor: pointer;
             flex-shrink: 0;
         }
-
     </style>
 </head>
 <body>
@@ -279,8 +262,12 @@
         </div>
     </div>
     
+    <!-- Load the external dictionary file -->
+    <script src="./large_dictionary.js"></script> 
+    
+    <!-- Load the main application logic -->
     <script>
-        // Global variable LARGE_DICTIONARY is defined above in a mock script block.
+        // NOTE: The LARGE_DICTIONARY constant is expected to be loaded via large_dictionary.js
         
         const APP = {
             // Configuration
@@ -296,14 +283,11 @@
             CURRENT_POSITION_INDEX: 0, 
             recognizer: null,
 
-            // D4 Shape Definitions
+            // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
-                // 1: Straight lines/corners
-                1: new Set('AEFHIKLMNTVWXYZ'.split('')), 
-                // 2: Curved/Mixed lines
-                2: new Set('BDGJPRU'.split('')), 
-                // 3: Circular/Round shapes
-                3: new Set('COS'.split('')), 
+                1: new Set('AEFHIKLMNTVWXYZ'.split('')), // Straight lines/corners
+                2: new Set('BDGJPRU'.split('')),         // Curved/Mixed lines
+                3: new Set('COS'.split('')),             // Circular/Round shapes
             },
 
             // D4 Trigger Words (1 = Word/Walk, 2 = Different, 3 = Option)
@@ -323,10 +307,11 @@
                 'TEN': 1, 'ELEVEN': 1, 'TWELVE': 2, 'THIRTEEN': 3, 'FOURTEEN': 4,
                 'FIFTEEN': 5, 'SIXTEEN': 6, 'SEVENTEEN': 7, 'EIGHTEEN': 8, 'NINETEEN': 9,
                 
-                // Homophones and common phonetic errors (UPDATED FOR ROBUSTNESS)
-                'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, // Added WONDER
-                'TO': 2, 'TOO': 2, 'THROUGH': 2, 'BLUE': 2, 'BLEW': 2, // Added BLUE, BLEW
-                'TREE': 3, 'FREE': 3, // Added FREE
+                // Homophones and common phonetic errors
+                'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
+                'WATCH': 1, 
+                'TO': 2, 'TOO': 2, 'THROUGH': 2, 'BLUE': 2, 'BLEW': 2, 
+                'TREE': 3, 'FREE': 3, 
                 'FOR': 4, 
                 'FINE': 5, 
                 'SEX': 6, 
@@ -383,6 +368,7 @@
             
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
+                // Prevents redundant starts and attempts to restart if mic is down (the core fix)
                 if (this.isListening) {
                     if (this.recognizer) {
                         this.logStatus("Attempted to start listening, but already active. Current lang: " + this.recognizer.lang);
@@ -402,7 +388,7 @@
                         this.isListening = false;
                         return;
                     }
-                    this.recognizer.abort(); 
+                    this.recognizer.abort(); // Clear any potentially stuck session
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
@@ -464,6 +450,7 @@
 
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                         this.logStatus("Listening session ended (no result/timeout). Restarting...");
+                        // Automatically restart listening session after a short delay
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
@@ -492,7 +479,7 @@
                     }
 
                     this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
-                    
+
                     if (this.MATCHES.length === 0) {
                         this.handleInitialPasscode(upperTranscript);
                     } else {
@@ -531,10 +518,13 @@
                 return indices;
             },
 
-            // Single-tap start (soft restart if in lock state)
+            /**
+             * Single Tap: If the mic is not currently listening (e.g., failed restart),
+             * a single tap on the clock area forces a manual restart.
+             */
             handleSingleTap(event) {
-                if (this.APP_STATE === 'AOD_LOCK') {
-                    this.logStatus("Single Tap: Mic inactive/locked. Restarting listening.");
+                if (!this.isListening && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
+                    this.logStatus("Single Tap: Forcing mic restart.");
                     this.startListening(); 
                 } else {
                     this.logStatus("Single Tap: Mic already active or in final state (Ignored).");
@@ -565,7 +555,10 @@
 
             // --- Core Logic (Filter functions) ---
             filterDictionary(d1, d2, d3, d4, initialList) {
-                if (!Array.isArray(initialList) || initialList.length === 0) { return []; } 
+                if (typeof initialList === 'undefined' || !Array.isArray(initialList) || initialList.length === 0) { 
+                    this.logStatus("Dictionary not initialized or empty during filtering.", true);
+                    return []; 
+                } 
                 
                 const dictionary = initialList.map(w => w.toUpperCase());
                 
@@ -614,7 +607,6 @@
                         bestIndex = i + 1; // 1-based index
                     }
                 }
-
                 return bestIndex;
             },
 
@@ -636,7 +628,7 @@
                         continue;
                     } 
                     
-                    // Check for raw digits (like "526" or "5")
+                    // Check for raw digits
                     if (/^\d{1,4}$/.test(w)) {
                         for (const digitChar of w) {
                             const digit = parseInt(digitChar, 10);
@@ -667,7 +659,7 @@
                 this.logStatus(`PASSCODE PARSED: D1=${d1}, D2=${d2}, D3=${d3}, D4=${d4}`);
 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
-                    this.logStatus("Dictionary not loaded. Resetting.", true); 
+                    this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); 
                     this.resetApp(true);
                     return; 
                 }
@@ -769,7 +761,7 @@
                     notifText.textContent = "Update not available"; 
                     currentSecond.textContent = '00';
                     
-                    // Add debug message to transcript widget (IMPROVEMENT)
+                    // Add debug message to transcript widget 
                     if (widget) {
                         widget.textContent += '\n\n>>> CODE FAILED (0 matches). Listening for new code...';
                         widget.scrollTop = widget.scrollHeight; 
@@ -853,12 +845,13 @@
                 console.log(prefix + message); 
             },
 
+            // --- Service Worker Registration (Loads sw.js) ---
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        // NOTE: In this single file, sw.js is not present, so this will log an error.
+                        // This points to your external sw.js file
                         navigator.serviceWorker.register('./sw.js') 
-                            .then(reg => this.logStatus('Service Worker registered.'))
+                            .then(reg => this.logStatus('Service Worker registration successful.'))
                             .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}`, true));
                     });
                 }
@@ -867,10 +860,10 @@
             // --- Initialization ---
             init() {
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
-                    this.logStatus("FATAL: Dictionary not accessible or is empty.", true);
-                    document.getElementById('notif-text').textContent = "ERROR: DICT NOT AVAILABLE";
+                    this.logStatus("WARNING: Dictionary (LARGE_DICTIONARY) not yet loaded.", true);
+                    document.getElementById('notif-text').textContent = "WAITING FOR DICT...";
                 } else {
-                    this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
+                     this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
                 }
                 
                 this.initVoiceRecognition();
@@ -880,29 +873,35 @@
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
                 
-                // --- SIMPLIFIED INTERACTION LOGIC ---
+                // Robust Mobile Touch Handling for Single/Double Tap
+                let lastTap = 0;
+                const doubleTapThreshold = 300; // ms
 
-                // Single Tap/Click on Clock Area to activate mic (handleSingleTap)
-                // This is the gesture that must start the mic, so we attach it directly.
+                clockContainer.addEventListener('touchend', function(e) {
+                    e.preventDefault(); 
+                    const now = Date.now();
+                    
+                    if (now - lastTap < doubleTapThreshold) {
+                        // Double Tap (Master Reset)
+                        APP.handleDoubleTap(e);
+                        lastTap = 0; 
+                    } else {
+                        // Single Tap (Mic Restart - the core fix)
+                        APP.handleSingleTap(e); 
+                    }
+                    lastTap = now;
+                });
+
+                // Click fallback for desktop/non-touch environments
                 clockContainer.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.handleSingleTap(e);
+                    if (Date.now() - lastTap > doubleTapThreshold * 2) { 
+                        APP.handleSingleTap(e);
+                    }
                 });
                 
-                // Double Tap on Clock Area to perform Master Reset (handleDoubleTap)
-                clockContainer.addEventListener('dblclick', (e) => {
-                    e.preventDefault();
-                    this.handleDoubleTap(e);
-                });
-
-
                 // Double tap on app body (outside clock/player) to toggle transcript widget
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
                 
-                // Set initial text for the clean widget
-                document.getElementById('transcript-widget').textContent = "Ready. Double-tap blank area to hide/show.";
-
-
                 // Attempt to load and resume state
                 const resumed = this.loadState();
 
