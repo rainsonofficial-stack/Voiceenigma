@@ -38,21 +38,30 @@
             padding: 30px 0; 
         }
         
+        /* New Container for Tap Area (Now handling robust touch events) */
+        #clock-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer; /* Indicate it's clickable */
+            z-index: 10;
+            /* Added padding to ensure large, easy-to-tap area */
+            padding: 20px; 
+            margin: -20px; 
+        }
+
         /* Clock Widget - ENSURING VISIBILITY */
         .time-display {
             font-size: 80px;
             font-weight: 300;
             margin-bottom: 5px;
             color: #ffffff; 
-            cursor: pointer; 
-            z-index: 10; 
         }
         .date-display {
             font-size: 16px;
             font-weight: 400;
             margin-bottom: 25px;
             color: #c4c4c4; 
-            z-index: 10;
         }
 
         /* --- Notification Bar (Discreet Shopping List / Final Word) --- */
@@ -207,9 +216,11 @@
 </head>
 <body>
     <div id="app">
-        <!-- Clock Widget (Tap to listen, Double-tap to reset) -->
-        <div class="time-display" id="aod-time"></div>
-        <div class="date-display" id="aod-date"></div>
+        <!-- Clock Container (Expanded Tap Target) -->
+        <div id="clock-container">
+            <div class="time-display" id="aod-time"></div>
+            <div class="date-display" id="aod-date"></div>
+        </div>
 
         <!-- System Notification (Used for Word List / Final Word Reveal) -->
         <div id="system-notification">
@@ -280,7 +291,7 @@
             D4_TRIGGERS: {
                 'WORD': 1, 'WORDS': 1,
                 'WALK': 1, 
-                'WATT': 1, 'WATTS': 1, // Added phonetic variations for D4=1
+                'WATT': 1, 'WATTS': 1, 
                 'DIFFERENT': 2,
                 'OPTION': 3, 'OPTIONS': 3,
             },
@@ -295,12 +306,12 @@
                 
                 // Homophones and common phonetic errors
                 'WAN': 1, 'WON': 1,
-                'TO': 2, 'TOO': 2, // Added 'TO' and kept 'TOO'
-                'TREE': 3, // Added 'TREE'
-                'FOR': 4, // Added 'FOR' (was in previous robustness, now clearer)
-                'FINE': 5, // Added 'FINE'
-                'SEX': 6, // Added 'SEX'
-                'ATE': 8, // Added 'ATE'
+                'TO': 2, 'TOO': 2, 
+                'TREE': 3, 
+                'FOR': 4, 
+                'FINE': 5, 
+                'SEX': 6, 
+                'ATE': 8, 
             },
 
             // SVG Icons
@@ -354,8 +365,6 @@
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
                 if (this.isListening) {
-                    // This is expected if 'onend' fires and immediately calls startListening
-                    // Check if recognizer is defined before calling its method
                     if (this.recognizer) {
                         this.logStatus("Attempted to start listening, but already active. Current lang: " + this.recognizer.lang);
                     }
@@ -363,11 +372,10 @@
                 }
 
                 this.isListening = true;
-                // Transition state from LOCK to LISTENING upon actual start
                 if (this.APP_STATE === 'AOD_LOCK') {
                     this.APP_STATE = 'AOD_LISTENING';
                 }
-                this.updateListeningUI(true); // Update UI to mic active state (pulsing gear)
+                this.updateListeningUI(true); 
                 
                 try {
                     if (!this.recognizer) {
@@ -375,7 +383,6 @@
                         this.isListening = false;
                         return;
                     }
-                    // CRITICAL: Abort any potentially stuck session before restarting
                     this.recognizer.abort(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
@@ -398,7 +405,6 @@
                 this.APP_STATE = 'AOD_DISPLAY_FINAL'; 
                 this.updateListeningUI(false); 
                 try {
-                    // Use abort for final stop
                     if (this.recognizer) this.recognizer.abort(); 
                     this.logStatus("Stopped continuous listening permanently.");
                 } catch (e) {}
@@ -408,9 +414,9 @@
                 const notifIcon = document.getElementById('notif-icon');
                 
                 if (isActive) {
-                    notifIcon.classList.add('listening-active'); // Starts pulse animation
+                    notifIcon.classList.add('listening-active'); 
                 } else {
-                    notifIcon.classList.remove('listening-active'); // Stops pulse animation
+                    notifIcon.classList.remove('listening-active'); 
                 }
             },
 
@@ -425,7 +431,6 @@
                 this.recognizer = new SpeechRecognition();
                 this.recognizer.continuous = false; 
                 this.recognizer.interimResults = false;
-                // --- CRITICAL: Explicitly set language to English to minimize drift ---
                 this.recognizer.lang = 'en-US'; 
                 this.logStatus("Voice Recognizer initialized. Target language: " + this.recognizer.lang);
                 
@@ -435,16 +440,13 @@
                     this.isListening = true;
                 };
 
-                // FIX #1: Ensure continuous restart unless the final word is displayed.
                 this.recognizer.onend = () => {
-                    this.isListening = false; // Recognizer has stopped
+                    this.isListening = false; 
 
-                    // If the app is NOT in the final state, attempt to restart
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                         this.logStatus("Listening session ended (no result/timeout). Restarting...");
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
-                        // In AOD_DISPLAY_FINAL state, we stop restarting.
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
                         this.updateListeningUI(false);
                     }
@@ -452,11 +454,10 @@
 
                 this.recognizer.onerror = (event) => {
                     this.logStatus(`Voice Error (${event.error}).`, true);
-                    // Fatal errors that require manual restart
                     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                         this.isListening = false;
                         this.updateListeningUI(false);
-                        this.APP_STATE = 'AOD_LOCK'; // Go back to lock state
+                        this.APP_STATE = 'AOD_LOCK'; 
                     }
                 };
                 
@@ -464,23 +465,18 @@
                     const rawTranscript = event.results[0][0].transcript.trim();
                     const upperTranscript = rawTranscript.toUpperCase();
                     
-                    // --- Update Transcript Widget (Only show what was heard) ---
                     const widget = document.getElementById('transcript-widget');
                     if (widget) {
                         const isInitialText = widget.textContent.includes("Ready. Double-tap");
-                        // Append transcript, using a newline unless it's the very first entry
                         widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + rawTranscript;
-                        widget.scrollTop = widget.scrollHeight; // Scroll to bottom
+                        widget.scrollTop = widget.scrollHeight; 
                     }
-                    // --- End Widget Update ---
 
-                    this.logStatus(`RAW Transcript received: "${upperTranscript}"`); // Keep logging to console for debug
+                    this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
                     
-                    // If matches.length is 0, we are waiting for a new passcode
                     if (this.MATCHES.length === 0) {
                         this.handleInitialPasscode(upperTranscript);
                     } else {
-                        // If matches.length > 0, we are in the filtering process
                         this.handleLetterInput(upperTranscript);
                     }
                 };
@@ -516,9 +512,9 @@
                 return indices;
             },
 
-            // Reliable single-tap start (soft restart if in lock state)
+            // Single-tap start (soft restart if in lock state)
             handleSingleTap(event) {
-                event.preventDefault(); 
+                // event.preventDefault(); // Handled in touch handler
                 if (this.APP_STATE === 'AOD_LOCK') {
                     this.logStatus("Single Tap: Mic inactive/locked. Restarting listening.");
                     this.startListening(); 
@@ -527,18 +523,17 @@
                 }
             },
 
-            // Master reset on double-tap (Fix #1)
+            // Master reset on double-tap 
             handleDoubleTap(event) {
-                event.preventDefault(); 
+                // event.preventDefault(); // Handled in touch handler
                 this.logStatus("Double Tap: Master Reset.");
                 this.resetApp(true); 
             },
             
             // Toggle Transcript Widget
             toggleTranscriptWidget(event) {
-                // Ensure double tap is on a neutral area (not the clock or music player)
-                const target = event.target;
-                if (target.closest('#aod-time') || target.closest('#music-player')) {
+                // Ignore double taps on the clock container as that is the master reset
+                if (event.target.closest('#clock-container') || event.target.closest('#music-player')) {
                     return; 
                 }
                 
@@ -640,7 +635,6 @@
                     numbers = numbers.slice(numbers.length - 3);
                 }
 
-                // Console log for debugging the 526 case
                 this.logStatus(`DEBUG: Numbers Parsed: ${numbers.join(', ')} (Length: ${numbers.length}), D4 Trigger Value: ${d4}`);
 
 
@@ -664,7 +658,6 @@
 
                 if (matches.length === 0) {
                     // SCENARIO 2: FILTERING FAILED (0 matches). 
-                    // Display error text and keep listening for a new attempt.
                     this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listener.");
                     this.updateNotification('NO_MATCHES'); 
                     return; 
@@ -729,6 +722,7 @@
                 const notifIcon = document.getElementById('notif-icon');
                 const notifText = document.getElementById('notif-text');
                 const currentSecond = document.getElementById('current-second');
+                const widget = document.getElementById('transcript-widget');
                 
                 if (status === 'FINAL') {
                     // Final state - Permanent Stop
@@ -748,7 +742,7 @@
                     notifText.innerHTML = `To buy: ${displayWords}`; 
                     currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     this.updateListeningUI(true); 
-                    this.saveState(); // Save state after every successful filter step
+                    this.saveState(); 
 
                 } else if (status === 'NO_MATCHES') {
                     // SCENARIO 2 PATH: Valid code, 0 matches. Keeps listening for a new code.
@@ -756,21 +750,26 @@
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "Update not available"; 
                     currentSecond.textContent = '00';
+                    
+                    // Add debug message to transcript widget
+                    if (widget) {
+                        widget.textContent += '\n\n>>> CODE FAILED (0 matches). Listening for new code...';
+                        widget.scrollTop = widget.scrollHeight; 
+                    }
+
                     this.updateListeningUI(true); 
-                    // Do NOT save state here; an empty matches list should restart the process on next successful code.
 
                 } else if (status === 'INITIAL') {
                     // DEFAULT PATH/SILENT RECOVERY: Displays default text.
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "System Update Available"; 
                     currentSecond.textContent = '00';
-                    this.clearState(); // Clear state when back to initial/lock
+                    this.clearState(); 
                     
                     if (!this.isListening) {
                         this.APP_STATE = 'AOD_LOCK';
                         this.updateListeningUI(false); 
                     } else {
-                        // If we are here via a loadState() resume, keep listening
                         this.APP_STATE = 'AOD_LISTENING';
                         this.updateListeningUI(true);
                     }
@@ -794,20 +793,17 @@
                         this.CURRENT_POSITION_INDEX = bestIndex;
                     }
                     
-                    // Update Music Player (0:XX)
                     document.getElementById('current-second').textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     
                     this.updateNotification('WORD_LIST'); 
                     
                 } else {
-                    // Fallback for 0 matches (should be caught by handleInitialPasscode, but safety first)
                     this.logStatus("Error state: Matches list is empty. Hard resetting.");
                     this.resetApp(true);
                 }
             },
             
             resetApp(returnToLock = true) {
-                // If we are resetting, ensure mic is stopped and state is cleared.
                 if (this.isListening) {
                     try { if (this.recognizer) this.recognizer.abort(); } catch(e){}
                 }
@@ -817,31 +813,28 @@
                 this.CURRENT_POSITION_INDEX = 0;
                 document.getElementById('current-second').textContent = '00';
                 
+                // Reset the transcript widget content
+                document.getElementById('transcript-widget').textContent = "Ready. Double-tap blank area to hide/show."; 
+
                 if (returnToLock) {
-                    // Double-tap reset: back to AOD_LOCK and default UI
                     this.updateNotification('INITIAL');
                     this.logStatus("App reset to AOD_LOCK state.");
                     this.clearState();
                     
-                    // Force the app back to lock state and ensure mic is fully off
                     this.APP_STATE = 'AOD_LOCK';
                     this.updateListeningUI(false); 
                 } else {
-                    // This path is used for soft resets or resuming state
                     this.updateNotification('INITIAL'); 
                     this.APP_STATE = 'AOD_LISTENING'; 
                     this.logStatus("App state cleared, ready for new voice input.");
                 }
             },
             
-            // Utility for logging in a discreet app (ONLY to console, not the visible widget)
             logStatus(message, isError = false) {
                 const prefix = isError ? "ERROR: " : "INFO: ";
-                // Only log to console, keeping system status out of the visible transcript widget
                 console.log(prefix + message); 
             },
 
-            // --- PWA Service Worker Registration ---
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
@@ -858,22 +851,45 @@
                     this.logStatus("FATAL: Dictionary not accessible or is empty.", true);
                     document.getElementById('notif-text').textContent = "ERROR: DICT NOT AVAILABLE";
                 } else {
-                    this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap time to start.`);
+                    this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
                 }
                 
                 this.initVoiceRecognition();
                 this.updateTime();
                 setInterval(() => this.updateTime(), 1000);   
                 
-                const timeElement = document.getElementById('aod-time');
+                const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
                 
-                // CRITICAL: Single tap to start/restart, Double tap for hard reset
-                timeElement.addEventListener('click', (e) => this.handleSingleTap(e));
-                timeElement.addEventListener('dblclick', (e) => this.handleDoubleTap(e));
-                timeElement.addEventListener('touchstart', (e) => e.preventDefault(), {passive: false});
+                // --- NEW ROBUST TOUCH LOGIC FOR SINGLE/DOUBLE TAP ON CLOCK AREA ---
+                let lastTapTime = 0;
+                const DOUBLE_TAP_THRESHOLD = 300; // milliseconds
 
-                // Double tap on app body to toggle transcript widget
+                clockContainer.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); // Prevents browser from handling it as a simple click
+                    const currentTime = new Date().getTime();
+                    const timeDifference = currentTime - lastTapTime;
+
+                    if (timeDifference < DOUBLE_TAP_THRESHOLD && timeDifference > 0) {
+                        // Double Tap Detected (Master Reset)
+                        this.logStatus("Touch Double Tap detected on Clock Area.");
+                        this.handleDoubleTap(e);
+                        lastTapTime = 0; // Reset timer to prevent accidental multi-taps
+                    } else {
+                        // Single Tap Candidate
+                        lastTapTime = currentTime;
+                        // Start a timeout to execute single tap logic if no second tap occurs
+                        setTimeout(() => {
+                            if (lastTapTime === currentTime) { // Check if timer hasn't been reset by a double tap
+                                this.logStatus("Touch Single Tap detected on Clock Area.");
+                                this.handleSingleTap(e);
+                            }
+                        }, DOUBLE_TAP_THRESHOLD);
+                    }
+                }, {passive: false});
+
+
+                // Double tap on app body to toggle transcript widget (using dblclick for simplicity on the large body)
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
                 
                 // Set initial text for the clean widget
@@ -883,15 +899,12 @@
                 // Attempt to load and resume state
                 const resumed = this.loadState();
 
-                // If not resumed, set the initial default UI.
                 if (!resumed) {
                     this.updateNotification('INITIAL');
                 }
                 
-                // Always start listening unless we are in the FINAL state
                 if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                    // This call will immediately set APP_STATE to LISTENING if it was LOCK, 
-                    // ensuring onend always triggers a restart.
+                    // Start listening regardless of app state to continuously check for passcode or letter input
                     this.startListening();
                 }
 
