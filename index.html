@@ -769,25 +769,66 @@
                     return; 
                 }
                 
-                const trigger = "INTERESTING";
-                const triggerIndex = transcript.indexOf(trigger);
+                let magicLetter = null;
+                const upperTranscript = transcript.toUpperCase();
                 
-                if (triggerIndex === -1) {
-                    this.logStatus("No 'interesting' trigger. Ignoring input.");
+                // -----------------------------------------------------------
+                // 1. PRIMARY LOGIC CHECK: CONSECUTIVE WORD REPETITION (PRIORITY 1)
+                // -----------------------------------------------------------
+                
+                // Clean the transcript of basic punctuation and split into words
+                const cleanTranscript = upperTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
+                const words = cleanTranscript.split(/\s+/).filter(w => w.length > 0);
+
+                for (let i = 0; i < words.length - 1; i++) {
+                    // Check if the current word and the next word are identical
+                    if (words[i] === words[i+1]) {
+                        // Primary trigger fired: Extract first letter of the repeated word
+                        magicLetter = words[i][0].toUpperCase();
+                        this.logStatus(`PRIMARY TRIGGER (Repetition) activated by '${words[i]} ${words[i+1]}'. Magic Letter: ${magicLetter}`);
+                        break; // Stop iteration; Primary rule takes precedence
+                    }
+                }
+
+                // -----------------------------------------------------------
+                // 2. SECONDARY LOGIC CHECK: 'INTERESTING' TRIGGER (PRIORITY 2)
+                // -----------------------------------------------------------
+                
+                if (!magicLetter) {
+                    // Only run the Secondary check if the Primary check failed (no repetition found)
+                    const trigger = "INTERESTING";
+                    const triggerIndex = upperTranscript.indexOf(trigger);
+                    
+                    if (triggerIndex === -1) {
+                        this.logStatus("No Primary trigger, and no 'interesting' trigger. Ignoring input.");
+                        return; 
+                    }
+                    
+                    // We only care about the words before the trigger word
+                    // Re-split the transcript focusing on the area before 'INTERESTING'
+                    const preTriggerArea = upperTranscript.substring(0, triggerIndex).trim();
+                    const preWords = preTriggerArea.split(/\s+/).filter(w => w.length > 0); 
+                    
+                    if (preWords.length === 0) {
+                        this.logStatus("Secondary trigger found, but no word precedes 'interesting'. Ignoring input.");
+                        return; 
+                    }
+                    
+                    const spokenWord = preWords[preWords.length - 1];
+                    // Secondary action: extract first letter of the preceding word
+                    magicLetter = spokenWord[0].toUpperCase();
+                    this.logStatus(`SECONDARY TRIGGER ('interesting') activated by preceding word '${spokenWord}'. Magic Letter: ${magicLetter}`);
+                }
+                
+                // -----------------------------------------------------------
+                // 3. APPLY FILTER (Proceeds only if magicLetter is found)
+                // -----------------------------------------------------------
+
+                if (!magicLetter) {
+                    // Should be caught in the checks above, but safety check
                     return; 
                 }
                 
-                const preTrigger = transcript.substring(0, triggerIndex).trim();
-                // FIX: Corrected variable name from 'preWords' to 'preTrigger'
-                const preWords = preTrigger.split(' ').filter(w => w.length > 0); 
-                
-                if (preWords.length === 0) {
-                    this.logStatus("No word found before 'interesting'. Ignoring input.");
-                    return; 
-                }
-                
-                const spokenWord = preWords[preWords.length - 1];
-                const magicLetter = spokenWord[0].toUpperCase();
                 const pos = this.CURRENT_POSITION_INDEX - 1; 
 
                 const filtered = this.MATCHES.filter(word => 
@@ -990,6 +1031,22 @@
                 // Double tap on app body (outside clock/player) to toggle transcript widget
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
                 
+                // --- MIC AUTORESTART ON FOCUS (NEW FEATURE) ---
+                window.addEventListener('focus', () => {
+                    this.logStatus("Window gained focus. Attempting to restart listening...");
+                    // Only start listening if we are not in the final, stopped state
+                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
+                        this.startListening();
+                    }
+                });
+
+                window.addEventListener('blur', () => {
+                    // The browser typically stops the mic when the tab/window loses focus, 
+                    // so we just log the event. 'focus' handles the restart.
+                    this.logStatus("Window lost focus/minimized.");
+                });
+                // --- END MIC AUTORESTART ---
+                
                 // Attempt to load and resume state
                 const resumed = this.loadState();
 
@@ -1010,3 +1067,4 @@
     </script>
 </body>
 </html>
+
