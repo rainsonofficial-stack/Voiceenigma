@@ -6,7 +6,7 @@
     <!-- This title is the fallback. The manifest name should override it. -->
     <title>OS | AOD Discreet Magic</title> 
     
-    <!-- CRITICAL: Ensure this exact link is in the head and is the LATEST file -->
+    <!-- CRITICAL FIX: Reverting the link back to manifest.json -->
     <link rel="manifest" href="./manifest.json">
     
     <!-- IMPORTANT iOS Requirement (for 180x180 high-res home screen icon) -->
@@ -931,14 +931,14 @@
                 console.log(prefix + message); 
             },
 
-            // --- Service Worker Registration (Loads sw-purge.js) ---
+            // --- Service Worker Registration (Loads sw.js) ---
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        // CRITICAL: We register the purge worker here to clear caches and unregister old workers.
-                        navigator.serviceWorker.register('./sw-purge.js', { scope: './' }) 
+                        // CRITICAL: We register the standard worker here
+                        navigator.serviceWorker.register('./sw.js', { scope: './' }) 
                             .then(reg => {
-                                this.logStatus('Service Worker (PURGE) registration successful. Refresh once more to confirm unregistration.');
+                                this.logStatus('Service Worker (SW) registration successful.');
                             })
                             .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}.`, true));
                     });
