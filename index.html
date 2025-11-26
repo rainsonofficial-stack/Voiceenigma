@@ -264,17 +264,17 @@
         </div>
     </div>
     
-    <!-- Load the external dictionary file from GitHub using the raw content URL -->
-    <script src="https://raw.githubusercontent.com/rainsonofficial-stack/Enigma/ea09886f715c234c6dcf2e41810531ce76923032/large_dictionary.js"></script> 
+    <!-- Load the external dictionary file -->
+    <script src="./large_dictionary.js"></script> 
     
     <!-- Load the main application logic -->
     <script>
-        // NOTE: The LARGE_DICTIONARY constant is expected to be loaded via the external script.
+        // NOTE: The LARGE_DICTIONARY constant is expected to be loaded via large_dictionary.js
         
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
-            // RESTART DELAY: Back to 10ms for minimal gap between sessions.
+            // MINIMAL RESTART DELAY: Set to 10ms for instant restart after command processing.
             RESTART_DELAY_MS: 10, 
             SESSION_KEY: 'aod_magic_state',
             
@@ -453,12 +453,10 @@
 
                 this.recognizer.onend = () => {
                     this.isListening = false; 
-                    
-                    // NOTE ON MIC CYCLING: This restart is necessary because most browsers terminate 
-                    // recognition sessions quickly, even with 'continuous: true'.
+
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                        // Restart handles the loop, uses a minimal delay for fast mic stream teardown/rebuild.
-                        this.logStatus(`Listening session ended. Recognizer state: ${this.recognizer.readyState}. Restarting after ${this.RESTART_DELAY_MS}ms...`);
+                        // Restart handles the loop, set to MINIMAL delay for instant transition.
+                        this.logStatus(`Listening session ended. Recognizer state: ${this.recognizer.readyState}. Restarting instantly...`);
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
