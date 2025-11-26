@@ -314,7 +314,7 @@
                 
                 // Homophones and common phonetic errors
                 'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
-                'TO': 2, 'TOO': 2, // <-- ADDED: Explicitly map 'TO' and 'TOO' to 2 for robustness
+                'TO': 2, 'TOO': 2, 
                 'TREE': 3, 'FREE': 3, 
                 'FOR': 4, 
                 'FINE': 5, 
@@ -602,9 +602,11 @@
                     }
                     
                     // D2 (First Vowel Position)
+                    // D2=0 is the wildcard (as confirmed by the user in a previous step)
                     if (d2 > 0 && (vIndices.length < 1 || vIndices[0] !== d2)) return false;
                     
                     // D3 (Second Vowel Position)
+                    // D3=0 is the wildcard
                     if (d3 > 0 && (vIndices.length < 2 || vIndices[1] !== d3)) return false;
                     
                     // D4 (First Letter Shape)
@@ -693,23 +695,31 @@
                     }
                 }
                 
-                if (numbers.length > 3) {
-                    // Only take the last 3 numbers if more were parsed
-                    numbers = numbers.slice(numbers.length - 3);
-                }
-
-                this.logStatus(`DEBUG: Numbers Parsed: ${numbers.join(', ')} (Length: ${numbers.length}), D4 Trigger Value: ${d4}`);
+                this.logStatus(`DEBUG: Numbers Parsed: [${numbers.join(', ')}] (Length: ${numbers.length}), D4 Trigger Value: ${d4}`);
 
                 let d1, d2, d3;
 
-                // --- CRITICAL FAILURE CHECKS AND D1 IMPLICIT ASSIGNMENT ---
+                // --- CRITICAL FAILURE CHECKS AND D1, D2, D3 ASSIGNMENT ---
                 if (d4 === 0) {
                     this.logStatus(`PASSCODE FAILURE: Missing D4 Trigger Word.`, true);
                     this.updateNotification('INITIAL'); 
                     return;
                 }
                 
-                if (numbers.length === 3) {
+                if (numbers.length > 3) {
+                    // FIX: If more than 3 numbers, prioritize the first for D1, and the last two for D2 and D3.
+                    if (numbers.length >= 3) { 
+                        d1 = numbers[0]; 
+                        d2 = numbers[numbers.length - 2];
+                        d3 = numbers[numbers.length - 1];
+                        this.logStatus(`OVERRIDE: Parsed ${numbers.length} digits. Forced D1=${d1}, D2=${d2}, D3=${d3}`);
+                    } else {
+                         // This case shouldn't realistically happen if length > 3, but safe guard.
+                         this.logStatus(`PASSCODE FAILURE: Too many digits but somehow less than 3.`, true);
+                         this.updateNotification('INITIAL'); 
+                         return; 
+                    }
+                } else if (numbers.length === 3) {
                     // Standard case: D1, D2, D3 provided explicitly
                     [d1, d2, d3] = numbers;
                     this.logStatus("Parsed 3 digits (D1, D2, D3).", false);
@@ -719,7 +729,7 @@
                     [d2, d3] = numbers;
                     this.logStatus("Parsed 2 digits (D2, D3). D1 defaults to 0 (Length 10).", false);
                 } else {
-                    // Hard failure for 0 or 1 digits, or more than 3
+                    // Hard failure for 0 or 1 digits
                     this.logStatus(`PASSCODE FAILURE: Failed to parse required 2 or 3 digits. Found only ${numbers.length}.`, true);
                     this.updateNotification('INITIAL'); 
                     return; 
@@ -727,7 +737,7 @@
                 // --- END CRITICAL FAILURE CHECKS ---
 
 
-                this.logStatus(`PASSCODE PARSED: D1=${d1} (Length: ${d1 === 0 ? '10' : d1 + ' or ' + (d1 + 10)}), D2=${d2}, D3=${d3}, D4=${d4}`);
+                this.logStatus(`PASSCODE PARSED: D1=${d1}${d2}${d3}${d4}. (Length: ${d1 === 0 ? '10' : d1 + ' or ' + (d1 + 10)}), D2=${d2}, D3=${d3}, D4=${d4}`);
 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
                     this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); 
@@ -768,7 +778,8 @@
                 }
                 
                 const preTrigger = transcript.substring(0, triggerIndex).trim();
-                const preWords = preWords.split(' ').filter(w => w.length > 0);
+                // FIX: Corrected variable name from 'preWords' to 'preTrigger'
+                const preWords = preTrigger.split(' ').filter(w => w.length > 0); 
                 
                 if (preWords.length === 0) {
                     this.logStatus("No word found before 'interesting'. Ignoring input.");
