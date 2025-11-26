@@ -98,7 +98,7 @@
             width: 90%;
             max-width: 400px;
             background: rgba(40, 42, 45, 0.8);
-            color: #d1d1d1; /* Updated to grayish white */
+            color: #d1d1d1; /* Grayish white */
             font-size: 10px;
             padding: 8px;
             margin: 15px 0;
@@ -276,10 +276,11 @@
                 3: new Set('COS'.split('')), 
             },
 
-            // D4 Trigger Words
+            // D4 Trigger Words (1 = Word/Walk, 2 = Different, 3 = Option)
             D4_TRIGGERS: {
                 'WORD': 1, 'WORDS': 1,
                 'WALK': 1, 
+                'WATT': 1, 'WATTS': 1, // Added phonetic variations for D4=1
                 'DIFFERENT': 2,
                 'OPTION': 3, 'OPTIONS': 3,
             },
@@ -288,11 +289,18 @@
             NUMBER_WORDS: {
                 'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 
                 'FIVE': 5, 'SIX': 6, 'SEVEN': 7, 'EIGHT': 8, 'NINE': 9,
+                // Teens only provide the D1 number
                 'TEN': 1, 'ELEVEN': 1, 'TWELVE': 2, 'THIRTEEN': 3, 'FOURTEEN': 4,
                 'FIFTEEN': 5, 'SIXTEEN': 6, 'SEVENTEEN': 7, 'EIGHTEEN': 8, 'NINETEEN': 9,
                 
-                // Robustness for common speech recognition errors
-                'WAN': 1, 'TOO': 2, 'FOR': 4, 'WON': 1,
+                // Homophones and common phonetic errors
+                'WAN': 1, 'WON': 1,
+                'TO': 2, 'TOO': 2, // Added 'TO' and kept 'TOO'
+                'TREE': 3, // Added 'TREE'
+                'FOR': 4, // Added 'FOR' (was in previous robustness, now clearer)
+                'FINE': 5, // Added 'FINE'
+                'SEX': 6, // Added 'SEX'
+                'ATE': 8, // Added 'ATE'
             },
 
             // SVG Icons
@@ -346,19 +354,31 @@
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
                 if (this.isListening) {
-                    this.logStatus("Attempted to start listening, but already active.");
+                    // This is expected if 'onend' fires and immediately calls startListening
+                    // Check if recognizer is defined before calling its method
+                    if (this.recognizer) {
+                        this.logStatus("Attempted to start listening, but already active. Current lang: " + this.recognizer.lang);
+                    }
                     return;
                 }
 
                 this.isListening = true;
-                this.APP_STATE = 'AOD_LISTENING';
+                // Transition state from LOCK to LISTENING upon actual start
+                if (this.APP_STATE === 'AOD_LOCK') {
+                    this.APP_STATE = 'AOD_LISTENING';
+                }
                 this.updateListeningUI(true); // Update UI to mic active state (pulsing gear)
                 
                 try {
+                    if (!this.recognizer) {
+                        this.logStatus("Recognizer not initialized. Cannot start listening.", true);
+                        this.isListening = false;
+                        return;
+                    }
                     // CRITICAL: Abort any potentially stuck session before restarting
                     this.recognizer.abort(); 
                     this.recognizer.start();
-                    this.logStatus("Started continuous listening session.");
+                    this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
                     if (e.name === 'InvalidStateError') {
                         this.logStatus("Recognizer is already active. Ignoring redundant start.", true);
@@ -373,13 +393,13 @@
             },
             
             stopListening() {
-                // Permanently stops the mic (for final word reveal)
+                // Permanently stops the mic (for final word reveal or hard reset)
                 this.isListening = false;
                 this.APP_STATE = 'AOD_DISPLAY_FINAL'; 
                 this.updateListeningUI(false); 
                 try {
                     // Use abort for final stop
-                    this.recognizer.abort(); 
+                    if (this.recognizer) this.recognizer.abort(); 
                     this.logStatus("Stopped continuous listening permanently.");
                 } catch (e) {}
             },
@@ -405,7 +425,9 @@
                 this.recognizer = new SpeechRecognition();
                 this.recognizer.continuous = false; 
                 this.recognizer.interimResults = false;
+                // --- CRITICAL: Explicitly set language to English to minimize drift ---
                 this.recognizer.lang = 'en-US'; 
+                this.logStatus("Voice Recognizer initialized. Target language: " + this.recognizer.lang);
                 
                 this.recognizer.onstart = () => { 
                     this.logStatus("Recognizing..."); 
@@ -413,16 +435,17 @@
                     this.isListening = true;
                 };
 
-                // Auto-restart logic (Fixes continuous listening)
+                // FIX #1: Ensure continuous restart unless the final word is displayed.
                 this.recognizer.onend = () => {
                     this.isListening = false; // Recognizer has stopped
 
-                    // If the app is not in the final state, attempt to restart
+                    // If the app is NOT in the final state, attempt to restart
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                         this.logStatus("Listening session ended (no result/timeout). Restarting...");
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
-                        this.logStatus("Listening ended permanently (Final Word Found).");
+                        // In AOD_DISPLAY_FINAL state, we stop restarting.
+                        this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
                         this.updateListeningUI(false);
                     }
                 };
@@ -453,9 +476,11 @@
 
                     this.logStatus(`RAW Transcript received: "${upperTranscript}"`); // Keep logging to console for debug
                     
+                    // If matches.length is 0, we are waiting for a new passcode
                     if (this.MATCHES.length === 0) {
                         this.handleInitialPasscode(upperTranscript);
                     } else {
+                        // If matches.length > 0, we are in the filtering process
                         this.handleLetterInput(upperTranscript);
                     }
                 };
@@ -502,7 +527,7 @@
                 }
             },
 
-            // Master reset on double-tap
+            // Master reset on double-tap (Fix #1)
             handleDoubleTap(event) {
                 event.preventDefault(); 
                 this.logStatus("Double Tap: Master Reset.");
@@ -585,6 +610,7 @@
             handleInitialPasscode(transcript) {
                 let d4 = 0;
                 let numbers = [];
+                // Clean up punctuation and split words
                 const words = transcript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(' ').map(w => w.trim()).filter(w => w.length > 0);
                 
                 for (const w of words) {
@@ -597,6 +623,7 @@
                         continue;
                     } 
                     
+                    // Check for raw digits (like "526" or "5")
                     if (/^\d{1,4}$/.test(w)) {
                         for (const digitChar of w) {
                             const digit = parseInt(digitChar, 10);
@@ -609,12 +636,17 @@
                 }
                 
                 if (numbers.length > 3) {
+                    // Only take the last 3 numbers if more were parsed
                     numbers = numbers.slice(numbers.length - 3);
                 }
 
+                // Console log for debugging the 526 case
+                this.logStatus(`DEBUG: Numbers Parsed: ${numbers.join(', ')} (Length: ${numbers.length}), D4 Trigger Value: ${d4}`);
+
+
                 if (d4 === 0 || numbers.length !== 3) {
-                    // SCENARIO 1: PARSING FAILED. Revert UI to default and rely on onend to restart mic.
-                    this.logStatus(`Initial passcode failed to parse: "${transcript}". Silently recovering.`);
+                    // SCENARIO 1: PARSING FAILED. 
+                    this.logStatus(`PASSCODE FAILURE: Passcode requires 3 numbers and 1 D4 trigger. Current: ${numbers.length} numbers, D4=${d4}.`, true);
                     this.updateNotification('INITIAL'); 
                     return; 
                 }
@@ -631,8 +663,9 @@
                 const matches = this.filterDictionary(d1, d2, d3, d4, LARGE_DICTIONARY);
 
                 if (matches.length === 0) {
-                    // SCENARIO 2: FILTERING FAILED (0 matches). Display error text.
-                    this.logStatus("Code filtered to 0 matches. Displaying 'Update not available'.");
+                    // SCENARIO 2: FILTERING FAILED (0 matches). 
+                    // Display error text and keep listening for a new attempt.
+                    this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listener.");
                     this.updateNotification('NO_MATCHES'); 
                     return; 
                 }
@@ -718,13 +751,13 @@
                     this.saveState(); // Save state after every successful filter step
 
                 } else if (status === 'NO_MATCHES') {
-                    // SCENARIO 2 PATH: Valid code, 0 matches.
+                    // SCENARIO 2 PATH: Valid code, 0 matches. Keeps listening for a new code.
                     this.APP_STATE = 'AOD_LISTENING'; 
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "Update not available"; 
                     currentSecond.textContent = '00';
                     this.updateListeningUI(true); 
-                    this.saveState(); // Still save state to keep it in NO_MATCHES mode
+                    // Do NOT save state here; an empty matches list should restart the process on next successful code.
 
                 } else if (status === 'INITIAL') {
                     // DEFAULT PATH/SILENT RECOVERY: Displays default text.
@@ -737,6 +770,7 @@
                         this.APP_STATE = 'AOD_LOCK';
                         this.updateListeningUI(false); 
                     } else {
+                        // If we are here via a loadState() resume, keep listening
                         this.APP_STATE = 'AOD_LISTENING';
                         this.updateListeningUI(true);
                     }
@@ -766,19 +800,16 @@
                     this.updateNotification('WORD_LIST'); 
                     
                 } else {
-                    // Fallback for 0 matches
+                    // Fallback for 0 matches (should be caught by handleInitialPasscode, but safety first)
                     this.logStatus("Error state: Matches list is empty. Hard resetting.");
                     this.resetApp(true);
                 }
             },
             
             resetApp(returnToLock = true) {
-                if (returnToLock) {
-                    this.stopListening();
-                } else {
-                    if (this.isListening) {
-                        try { this.recognizer.abort(); } catch(e){}
-                    }
+                // If we are resetting, ensure mic is stopped and state is cleared.
+                if (this.isListening) {
+                    try { if (this.recognizer) this.recognizer.abort(); } catch(e){}
                 }
                 
                 this.MATCHES = [];
@@ -791,7 +822,12 @@
                     this.updateNotification('INITIAL');
                     this.logStatus("App reset to AOD_LOCK state.");
                     this.clearState();
+                    
+                    // Force the app back to lock state and ensure mic is fully off
+                    this.APP_STATE = 'AOD_LOCK';
+                    this.updateListeningUI(false); 
                 } else {
+                    // This path is used for soft resets or resuming state
                     this.updateNotification('INITIAL'); 
                     this.APP_STATE = 'AOD_LISTENING'; 
                     this.logStatus("App state cleared, ready for new voice input.");
@@ -854,6 +890,8 @@
                 
                 // Always start listening unless we are in the FINAL state
                 if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
+                    // This call will immediately set APP_STATE to LISTENING if it was LOCK, 
+                    // ensuring onend always triggers a restart.
                     this.startListening();
                 }
 
