@@ -1,12 +1,12 @@
-const CACHE_NAME = 'aod-magic-cache-v4'; // Bumped cache version
+const CACHE_NAME = 'aod-magic-cache-v5'; // Bumped cache version again to force update
 // IMPORTANT: Paths must match the files in the repository root.
 const urlsToCache = [
-    '/', 
-    './index.html',
+    '/Voiceenigma/', // Use the folder root
+    '/Voiceenigma/index.html', // Use the explicit index path
     './manifest.json',
-    './large_dictionary.js', // Local dictionary file
-    './icon-192.png',        // Corrected filename
-    './icon-512.png'         // Corrected filename
+    './large_dictionary.js', 
+    './icon-192.png',        
+    './icon-512.png'         
 ];
 
 // Install event: Caches the necessary assets
@@ -16,6 +16,7 @@ self.addEventListener('install', (event) => {
         caches.open(CACHE_NAME)
             .then((cache) => {
                 console.log('Opened cache and caching resources.');
+                // Note: cache.addAll will fail if even one path is wrong/unreachable.
                 return cache.addAll(urlsToCache);
             })
             .catch(error => {
