@@ -3,13 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <!-- This title is the fallback. The manifest name should override it. -->
+    <!-- PWA CRITERIA: Manifest Link -->
     <title>OS | AOD Discreet Magic</title> 
-    
-    <!-- CRITICAL FIX: Reverting the link back to manifest.json -->
     <link rel="manifest" href="./manifest.json">
-    
-    <!-- IMPORTANT iOS Requirement (for 180x180 high-res home screen icon) -->
     <link rel="apple-touch-icon" href="/icon-180x180.png">
     
     <!-- Loads external CSS for styling -->
@@ -215,33 +211,6 @@
             cursor: pointer;
             flex-shrink: 0;
         }
-        
-        /* Style for the Install Button */
-        #install-button {
-            background: rgba(60, 200, 100, 0.7); /* Green/Teal */
-            color: #ffffff;
-            font-weight: 600;
-            font-size: 12px;
-            width: auto;
-            min-width: 100px;
-            padding: 8px 15px;
-            border-radius: 8px;
-            position: absolute; /* Place it outside the bottom-icons for now */
-            bottom: 100px; /* Position above the bottom bar */
-            left: 50%;
-            transform: translateX(-50%);
-            display: none; /* Initially hidden */
-            z-index: 20;
-            text-align: center;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        #install-button:active {
-            transform: translateX(-50%) scale(0.98);
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
-        }
     </style>
 </head>
 <body>
@@ -259,11 +228,6 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>
             </div>
             <div class="notif-text" id="notif-text">System Update Available</div>
-        </div>
-
-        <!-- Install Button (Hidden by default) -->
-        <div id="install-button" title="Install the app to your home screen">
-            Install App
         </div>
 
         <!-- Debug Transcript Widget -->
@@ -319,8 +283,6 @@
             HISTORY: [], 
             CURRENT_POSITION_INDEX: 0, 
             recognizer: null,
-            // PWA Install Prompt State
-            deferredInstallPrompt: null,
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
@@ -427,17 +389,18 @@
                         this.isListening = false;
                         return;
                     }
-                    this.recognizer.abort(); // Clear any potentially stuck session before restarting
+                    // No need to abort here, let the browser handle state changes via its error/end handlers
+                    // this.recognizer.abort(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
                     if (e.name === 'InvalidStateError') {
-                        this.logStatus("Recognizer is already active. Ignoring redundant start.", true);
+                        this.logStatus("Recognizer is already active. Ignoring redundant start. (Handled by try/catch)", true);
                         this.isListening = true;
                         this.updateListeningUI(true);
                         return;
                     }
-                    this.logStatus(`Error starting recognition: ${e.message}. Attempting recovery in onend.`, true);
+                    this.logStatus(`Error starting recognition: ${e.message}. (Likely mic permission issues)`, true);
                     this.isListening = false;
                     this.updateListeningUI(false);
                 }
@@ -490,7 +453,7 @@
 
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                         // Restart handles the loop, set to MINIMAL delay for instant transition.
-                        this.logStatus(`Listening session ended. Restarting instantly (${this.RESTART_DELAY_MS}ms delay)...`);
+                        this.logStatus(`Listening session ended. Recognizer state: ${this.recognizer.readyState}. Restarting instantly...`);
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
@@ -521,9 +484,8 @@
                     this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
                     
                     // CRITICAL: Manually stop the continuous session after receiving a result.
-                    // This forces onend to fire, which then restarts the mic. This is necessary 
-                    // to ensure the next command (the letter) starts a fresh, distinct session.
-                    this.logStatus("Result received. Stopping session for processing and instant restart.");
+                    // This forces onend to fire, which then restarts the mic for a fresh session.
+                    this.logStatus("Result received. Stopping session for processing and instant restart via onend.");
                     this.recognizer.abort(); 
 
                     if (this.MATCHES.length === 0) {
@@ -565,21 +527,30 @@
             },
 
             /**
-             * Single Tap: Fixes issue 3 (Mic doesn't restart after browser reopen).
-             * We ensure isListening is reset if the recognizer is dead, allowing startListening to run.
+             * Single Tap: Ensures mic is active, especially after suspension/reopen.
              */
             handleSingleTap(event) {
-                // 3. FIX: Check if the recognizer instance exists but is closed (stale state after suspension/reopen)
-                // If it is, force a reset of the isListening flag to enable the restart logic below.
-                if (this.recognizer && this.recognizer.readyState === 'closed') {
-                    this.isListening = false;
+                if (!this.recognizer) {
+                    this.logStatus("Single Tap: Recognizer not initialized.", true);
+                    return;
                 }
 
-                if (!this.isListening && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                    this.logStatus("Single Tap: Forcing mic restart (Manual Recovery).");
+                if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
+                    this.logStatus("Single Tap: In final display state (Ignored).");
+                    return;
+                }
+                
+                const readyState = this.recognizer.readyState;
+                this.logStatus(`Single Tap detected. Recognizer readyState: ${readyState}, isListening flag: ${this.isListening}`);
+
+                // If the readyState is not 'listening' (i.e., 'idle' or 'closed'), force a restart.
+                // We reset the flag here just in case it was stuck by the browser.
+                if (readyState !== 'listening') {
+                    this.isListening = false;
+                    this.logStatus("Forcing mic restart (readyState was not 'listening').");
                     this.startListening(); 
                 } else {
-                    this.logStatus("Single Tap: Mic already active or in final state (Ignored).");
+                    this.logStatus("Mic is already active ('listening'). Tap ignored.");
                 }
             },
 
@@ -604,32 +575,10 @@
                 }
             },
             
-            // --- PWA Installation Handler ---
-            handleInstallClick() {
-                const installButton = document.getElementById('install-button');
-
-                if (this.deferredInstallPrompt) {
-                    this.deferredInstallPrompt.prompt();
-
-                    this.deferredInstallPrompt.userChoice.then((choiceResult) => {
-                        if (choiceResult.outcome === 'accepted') {
-                            this.logStatus('PWA installation accepted by user.');
-                        } else {
-                            this.logStatus('PWA installation dismissed by user.');
-                        }
-                        this.deferredInstallPrompt = null;
-                        installButton.style.display = 'none'; // Hide button after prompt is used
-                    });
-                } else {
-                    this.logStatus("Install prompt not ready or already used.", true);
-                }
-            },
-
-
             // --- Core Logic (Filter functions) ---
             filterDictionary(d1, d2, d3, d4, initialList) {
                 if (typeof initialList === 'undefined' || !Array.isArray(initialList) || initialList.length === 0) { 
-                    this.logStatus("Dictionary not initialized or empty during filtering.", true);
+                    this.logStatus("Dictionary not initialized or empty during filtering in filterDictionary.", true);
                     return []; 
                 } 
                 
@@ -960,21 +909,8 @@
                 
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
-                const installButton = document.getElementById('install-button');
                 
-                // 1. PWA INSTALL LISTENER (CRITICAL FOR MANUAL PROMPT)
-                window.addEventListener('beforeinstallprompt', (e) => {
-                    e.preventDefault();
-                    this.deferredInstallPrompt = e;
-                    installButton.style.display = 'block'; // Show the manual install button
-                    this.logStatus("Install prompt detected. Button shown.");
-                });
-                
-                // 2. PWA INSTALL BUTTON HANDLER
-                installButton.addEventListener('click', () => this.handleInstallClick());
-
-
-                // 3. VOICE INPUT HANDLERS
+                // 1. VOICE INPUT HANDLERS
                 
                 // Robust Mobile Touch Handling for Single/Double Tap
                 let lastTap = 0;
@@ -984,10 +920,11 @@
                     e.preventDefault(); 
                     const now = Date.now();
                     
+                    // Check for double tap
                     if (now - lastTap < doubleTapThreshold) {
                         // Double Tap (Master Reset)
                         APP.handleDoubleTap(e);
-                        lastTap = 0; 
+                        lastTap = 0; // Reset last tap time after successful double tap
                     } else {
                         // Single Tap (Mic Restart - the core fix for resume/reopen)
                         APP.handleSingleTap(e); 
@@ -997,6 +934,7 @@
 
                 // Click fallback for desktop/non-touch environments
                 clockContainer.addEventListener('click', (e) => {
+                    // Only run click if it wasn't part of a recent touch event (to prevent double handling)
                     if (Date.now() - lastTap > doubleTapThreshold * 2) { 
                         APP.handleSingleTap(e);
                     }
@@ -1012,12 +950,12 @@
                     this.updateNotification('INITIAL');
                 }
                 
+                // Start listening initially to ensure mic is active if permissions are granted.
                 if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                    // Start listening regardless of app state to continuously check for passcode or letter input
                     this.startListening();
                 }
 
-                this.registerServiceWorker();
+                this.registerServiceWorker(); // PWA registration is here
             }
         };
 
