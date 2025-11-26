@@ -931,23 +931,16 @@
                 console.log(prefix + message); 
             },
 
-            // --- Service Worker Registration (Loads sw.js) ---
+            // --- Service Worker Registration (Loads sw-purge.js) ---
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        // Using scope: './' to force the SW to control the entire app directory (Voiceenigma)
-                        navigator.serviceWorker.register('./sw.js', { scope: './' }) 
+                        // CRITICAL: We register the purge worker here to clear caches and unregister old workers.
+                        navigator.serviceWorker.register('./sw-purge.js', { scope: './' }) 
                             .then(reg => {
-                                this.logStatus('Service Worker registration successful.');
-                                if (reg.installing) {
-                                    this.logStatus('SW state: Installing');
-                                } else if (reg.waiting) {
-                                    this.logStatus('SW state: Waiting');
-                                } else if (reg.active) {
-                                    this.logStatus('SW state: Active');
-                                }
+                                this.logStatus('Service Worker (PURGE) registration successful. Refresh once more to confirm unregistration.');
                             })
-                            .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}. Check console for path errors.`, true));
+                            .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}.`, true));
                     });
                 }
             },
