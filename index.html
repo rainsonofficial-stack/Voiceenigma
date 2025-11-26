@@ -33,7 +33,6 @@
             user-select: none;
             color: #c4c4c4; 
             box-sizing: border-box;
-            /* Position adjusted in previous step */
             padding-top: 180px; 
             padding-bottom: 30px; 
         }
@@ -229,7 +228,7 @@
                 <!-- Initial Gear SVG -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>
             </div>
-            <div class="notif-text" id="notif-text">System Update Available</div>
+            <div class="notif-text" id="notif-text">Loading Dictionary...</div>
         </div>
 
         <!-- Debug Transcript Widget -->
@@ -264,17 +263,18 @@
         </div>
     </div>
     
-    <!-- Load the external dictionary file from GitHub using the raw content URL -->
-    <script src="https://raw.githubusercontent.com/rainsonofficial-stack/Enigma/ea09886f715c234c6dcf2e41810531ce76923032/large_dictionary.js"></script> 
+    <!-- NOTE: Removed the old <script src="..."> tag. The dictionary is now loaded via fetch/eval below. -->
     
     <!-- Load the main application logic -->
     <script>
-        // NOTE: The LARGE_DICTIONARY constant is expected to be loaded via the external script.
+        // GLOBAL VARIABLE: This will be populated by the loadDictionary function after fetching the remote script.
+        var LARGE_DICTIONARY = [];
+
+        const DICT_URL = "https://raw.githubusercontent.com/rainsonofficial-stack/Enigma/ea09886f715c234c6dcf2e41810531ce76923032/large_dictionary.js";
         
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
-            // RESTART DELAY: Back to 10ms for minimal gap between sessions.
             RESTART_DELAY_MS: 10, 
             SESSION_KEY: 'aod_magic_state',
             
@@ -371,8 +371,47 @@
                 this.logStatus("Cleared session state.");
             },
             
+            // --- Dictionary Loading (Robust Async Fetch) ---
+            async loadDictionary() {
+                const notifTextEl = document.getElementById('notif-text');
+                notifTextEl.textContent = "Loading Dictionary...";
+
+                try {
+                    this.logStatus("Fetching external dictionary...");
+                    const response = await fetch(DICT_URL);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status} from ${DICT_URL}`);
+                    }
+                    
+                    const scriptText = await response.text();
+                    
+                    // Execute the script content to define the global LARGE_DICTIONARY constant.
+                    // This is the functional equivalent of the old <script> tag, but synchronous within this async chain.
+                    window.eval(scriptText); 
+                    
+                    if (typeof LARGE_DICTIONARY !== 'undefined' && Array.isArray(LARGE_DICTIONARY) && LARGE_DICTIONARY.length > 0) {
+                        this.logStatus(`Dictionary loaded successfully. Size: ${LARGE_DICTIONARY.length}`);
+                        notifTextEl.textContent = "System Update Available";
+                        return true;
+                    } else {
+                        throw new Error("Script executed but dictionary constant not defined.");
+                    }
+                } catch (e) {
+                    this.logStatus(`CRITICAL DICTIONARY LOAD FAILURE: ${e.message}`, true);
+                    notifTextEl.textContent = "ERROR: Dictionary Failed to Load. Tap to retry.";
+                    return false;
+                }
+            },
+            
             // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
+                if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
+                    this.logStatus("Cannot start listening, dictionary not loaded.", true);
+                    this.updateNotification('LOADING_ERROR');
+                    return;
+                }
+
                 if (this.isListening) {
                     if (this.recognizer) {
                         this.logStatus("Attempted to start listening, but already active. Current lang: " + this.recognizer.lang);
@@ -392,8 +431,6 @@
                         this.isListening = false;
                         return;
                     }
-                    // No need to abort here, let the browser handle state changes via its error/end handlers
-                    // this.recognizer.abort(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
@@ -439,7 +476,6 @@
                 }
                 
                 this.recognizer = new SpeechRecognition();
-                // continuous = true allows for longer pauses within a thought/sentence.
                 this.recognizer.continuous = true; 
                 this.recognizer.interimResults = false;
                 this.recognizer.lang = 'en-US'; 
@@ -454,14 +490,11 @@
                 this.recognizer.onend = () => {
                     this.isListening = false; 
                     
-                    // NOTE ON MIC CYCLING: This restart is necessary because most browsers terminate 
-                    // recognition sessions quickly, even with 'continuous: true'.
-                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                        // Restart handles the loop, uses a minimal delay for fast mic stream teardown/rebuild.
-                        this.logStatus(`Listening session ended. Recognizer state: ${this.recognizer.readyState}. Restarting after ${this.RESTART_DELAY_MS}ms...`);
+                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL' && (typeof LARGE_DICTIONARY !== 'undefined' && LARGE_DICTIONARY.length > 0)) {
+                        this.logStatus(`Listening session ended. Restarting after ${this.RESTART_DELAY_MS}ms...`);
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
-                        this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
+                        this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state or dictionary error.");
                         this.updateListeningUI(false);
                     }
                 };
@@ -488,8 +521,6 @@
 
                     this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
                     
-                    // CRITICAL: Manually stop the continuous session after receiving a result.
-                    // This forces onend to fire, which then restarts the mic for a fresh session.
                     this.logStatus("Result received. Stopping session for processing and instant restart via onend.");
                     this.recognizer.abort(); 
 
@@ -534,7 +565,18 @@
             /**
              * Single Tap: Ensures mic is active, especially after suspension/reopen.
              */
-            handleSingleTap(event) {
+            async handleSingleTap(event) {
+                // If dictionary is not loaded, try to load it on tap
+                if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
+                    this.logStatus("Dictionary is missing. Attempting to reload dictionary on tap.");
+                    const loaded = await this.loadDictionary();
+                    if (!loaded) return; 
+                    // If successfully loaded, fall through and start listening
+                    this.initVoiceRecognition(); 
+                    this.startListening();
+                    return; 
+                }
+
                 if (!this.recognizer) {
                     this.logStatus("Single Tap: Recognizer not initialized.", true);
                     return;
@@ -548,8 +590,6 @@
                 const readyState = this.recognizer.readyState;
                 this.logStatus(`Single Tap detected. Recognizer readyState: ${readyState}, isListening flag: ${this.isListening}`);
 
-                // If the readyState is not 'listening' (i.e., 'idle' or 'closed'), force a restart.
-                // We reset the flag here just in case it was stuck by the browser.
                 if (readyState !== 'listening') {
                     this.isListening = false;
                     this.logStatus("Forcing mic restart (readyState was not 'listening').");
@@ -604,7 +644,7 @@
                     }
                     
                     // D2 (First Vowel Position)
-                    // D2=0 is the wildcard (as confirmed by the user in a previous step)
+                    // D2=0 is the wildcard
                     if (d2 > 0 && (vIndices.length < 1 || vIndices[0] !== d2)) return false;
                     
                     // D3 (Second Vowel Position)
@@ -742,8 +782,8 @@
                 this.logStatus(`PASSCODE PARSED: D1=${d1}${d2}${d3}${d4}. (Length: ${d1 === 0 ? '10' : d1 + ' or ' + (d1 + 10)}), D2=${d2}, D3=${d3}, D4=${d4}`);
 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
-                    this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); 
-                    this.resetApp(true);
+                    this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Cannot filter.", true); 
+                    this.updateNotification('LOADING_ERROR');
                     return; 
                 }
 
@@ -780,7 +820,6 @@
                 }
                 
                 const preTrigger = transcript.substring(0, triggerIndex).trim();
-                // FIX: Corrected variable name from 'preWords' to 'preTrigger'
                 const preWords = preTrigger.split(' ').filter(w => w.length > 0); 
                 
                 if (preWords.length === 0) {
@@ -852,6 +891,14 @@
                     }
 
                     this.updateListeningUI(true); 
+
+                } else if (status === 'LOADING_ERROR') {
+                    // Critical failure before the app can fully start
+                    notifIcon.innerHTML = this.ICON_GEAR_SVG;
+                    notifText.textContent = "ERROR: Dictionary Failed to Load. Tap to retry."; 
+                    currentSecond.textContent = '00';
+                    this.APP_STATE = 'AOD_LOCK';
+                    this.updateListeningUI(false);
 
                 } else if (status === 'INITIAL') {
                     // DEFAULT PATH/SILENT RECOVERY: Displays default text.
@@ -944,13 +991,18 @@
             },
 
             // --- Initialization ---
-            init() {
-                if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
-                    this.logStatus("WARNING: Dictionary (LARGE_DICTIONARY) not yet loaded.", true);
-                    document.getElementById('notif-text').textContent = "WAITING FOR DICT...";
-                } else {
-                     this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
+            async init() {
+                // 1. Load Dictionary (The Robust Way)
+                const dictionaryLoaded = await this.loadDictionary();
+                
+                // Halt if the dictionary failed to load
+                if (!dictionaryLoaded) {
+                    this.logStatus("Initialization halted due to dictionary failure.", true);
+                    return; 
                 }
+
+                // 2. Proceed with App Initialization
+                this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
                 
                 this.initVoiceRecognition();
                 this.updateTime();
@@ -959,31 +1011,25 @@
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
                 
-                // 1. VOICE INPUT HANDLERS
-                
-                // Robust Mobile Touch Handling for Single/Double Tap
+                // 3. VOICE INPUT HANDLERS (Same robust touch handling)
                 let lastTap = 0;
-                const doubleTapThreshold = 300; // ms
+                const doubleTapThreshold = 300; 
 
                 clockContainer.addEventListener('touchend', function(e) {
                     e.preventDefault(); 
                     const now = Date.now();
                     
-                    // Check for double tap
                     if (now - lastTap < doubleTapThreshold) {
-                        // Double Tap (Master Reset)
                         APP.handleDoubleTap(e);
-                        lastTap = 0; // Reset last tap time after successful double tap
+                        lastTap = 0; 
                     } else {
-                        // Single Tap (Mic Restart - the core fix for resume/reopen)
+                        // Single Tap is now ASYNC to handle potential dictionary reload
                         APP.handleSingleTap(e); 
                     }
                     lastTap = now;
                 });
 
-                // Click fallback for desktop/non-touch environments
                 clockContainer.addEventListener('click', (e) => {
-                    // Only run click if it wasn't part of a recent touch event (to prevent double handling)
                     if (Date.now() - lastTap > doubleTapThreshold * 2) { 
                         APP.handleSingleTap(e);
                     }
@@ -992,22 +1038,23 @@
                 // Double tap on app body (outside clock/player) to toggle transcript widget
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
                 
-                // Attempt to load and resume state
+                // 4. Resume State & Start Listening
                 const resumed = this.loadState();
 
                 if (!resumed) {
                     this.updateNotification('INITIAL');
                 }
                 
-                // Start listening initially to ensure mic is active if permissions are granted.
+                // Start listening only if we successfully loaded the dictionary
                 if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                     this.startListening();
                 }
 
-                this.registerServiceWorker(); // PWA registration is here
+                this.registerServiceWorker(); 
             }
         };
 
+        // Use a wrapping function for window.onload since APP.init is now async
         window.onload = () => APP.init();
     </script>
 </body>
