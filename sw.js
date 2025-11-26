@@ -1,18 +1,17 @@
-const CACHE_NAME = 'aod-magic-cache-v3'; // Bumped cache version to force update of large_dictionary.js
-// IMPORTANT: Changed paths to be relative to the GitHub Pages repository root for safety.
+const CACHE_NAME = 'aod-magic-cache-v4'; // Bumped cache version
+// IMPORTANT: Paths must match the files in the repository root.
 const urlsToCache = [
-    '/', // Root of the app, which serves index.html
+    '/', 
     './index.html',
     './manifest.json',
     './large_dictionary.js', // Local dictionary file
-    // Also include the icons that the manifest references
-    './icon-192A.png',
-    './icon-512A.png' 
+    './icon-192.png',        // Corrected filename
+    './icon-512.png'         // Corrected filename
 ];
 
 // Install event: Caches the necessary assets
 self.addEventListener('install', (event) => {
-    self.skipWaiting(); // Added to ensure service worker activates immediately
+    self.skipWaiting(); 
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => {
@@ -30,11 +29,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request)
             .then((response) => {
-                // Cache hit - return response
                 if (response) {
                     return response;
                 }
-                // No cache hit - fetch from network
                 return fetch(event.request);
             }
         )
@@ -43,7 +40,7 @@ self.addEventListener('fetch', (event) => {
 
 // Activate event: Clears old caches
 self.addEventListener('activate', (event) => {
-    event.waitUntil(self.clients.claim()); // Added to immediately control clients
+    event.waitUntil(self.clients.claim()); 
     const cacheWhitelist = [CACHE_NAME];
     event.waitUntil(
         caches.keys().then((cacheNames) => {
