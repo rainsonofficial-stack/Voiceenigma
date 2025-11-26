@@ -312,7 +312,7 @@
                 
                 // Homophones and common phonetic errors
                 'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
-                'TO': 2, 'TOO': 2, 'THROUGH': 2, 'BLUE': 2, 'BLEW': 2, 
+                // Removed all homophones for TWO per user request sensitivity
                 'TREE': 3, 'FREE': 3, 
                 'FOR': 4, 
                 'FINE': 5, 
@@ -653,6 +653,14 @@
                     // 1. Check D4 Trigger (use the clean word)
                     const triggerValue = this.D4_TRIGGERS[cleanWord];
                     if (triggerValue) { d4 = triggerValue; }
+                    
+                    // --- NEW DUAL CHECK (D2=1, D3=2) ---
+                    if (cleanWord === 'DUAL') {
+                        numbers.push(1);
+                        numbers.push(2);
+                        continue;
+                    }
+                    // --- END NEW DUAL CHECK ---
 
                     // 2. Check for number words (use the clean word)
                     // Treat "DOT" or "POINT" as the number 1
@@ -704,10 +712,9 @@
                     [d1, d2, d3] = numbers;
                     this.logStatus("Parsed 3 digits (D1, D2, D3).", false);
                 } else if (numbers.length === 2) {
-                    // NEW RULE: D1 is missing, so D1 defaults to 0 (meaning 10 letters)
+                    // D1 is missing, so D1 defaults to 0 (meaning 10 letters)
                     d1 = 0;
-                    d2 = numbers[0];
-                    d3 = numbers[1];
+                    [d2, d3] = numbers;
                     this.logStatus("Parsed 2 digits (D2, D3). D1 defaults to 0 (Length 10).", false);
                 } else {
                     // Hard failure for 0 or 1 digits, or more than 3
