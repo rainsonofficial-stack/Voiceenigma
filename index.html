@@ -934,7 +934,7 @@
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        // FIX FOR GITHUB PAGES SUBPATH: Use scope: './' to force the SW to control the entire app directory
+                        // Using scope: './' to force the SW to control the entire app directory (Voiceenigma)
                         navigator.serviceWorker.register('./sw.js', { scope: './' }) 
                             .then(reg => {
                                 this.logStatus('Service Worker registration successful.');
