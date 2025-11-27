@@ -282,8 +282,10 @@
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
-            // MINIMAL RESTART DELAY: Set to 10ms for instant restart after command processing.
-            RESTART_DELAY_MS: 10, 
+            // MINIMAL RESTART DELAY: increased to 300ms for gentler restarts
+            RESTART_DELAY_MS: 300, 
+            // Watchdog interval (ms) used to detect stalls
+            RECOGNIZER_WATCHDOG_MS: 3000,
             SESSION_KEY: 'aod_magic_state',
             
             // State Variables
@@ -295,6 +297,13 @@
             FULL_PASSCODE: '',          // Stores the 4-digit D1D2D3D4 code
             APPLIED_LETTERS: '',        // Stores the sequence of applied letters
             recognizer: null,
+
+            // Stitch/interim helper
+            _lastInterim: '',
+            _watchdogTimer: null,
+            _lastResultAt: 0,
+            _restartAttempts: 0,
+            _MAX_RESTART_BACKOFF_MS: 10000, // 10s cap
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
@@ -411,6 +420,8 @@
                         return;
                     }
                     this.recognizer.start();
+                    this._restartAttempts = 0;
+                    this._lastResultAt = Date.now();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
                     if (e.name === 'InvalidStateError') {
@@ -431,8 +442,8 @@
                 this.APP_STATE = 'AOD_DISPLAY_FINAL'; 
                 this.updateListeningUI(false); 
                 try {
-                    if (this.recognizer) this.recognizer.abort(); 
-                    this.logStatus("Stopped continuous listening permanently.");
+                    if (this.recognizer) this.recognizer.stop(); // graceful stop: allows final result
+                    this.logStatus("Stopped continuous listening permanently (graceful).");
                 } catch (e) {}
             },
 
@@ -456,8 +467,10 @@
                 
                 this.recognizer = new SpeechRecognition();
                 this.recognizer.continuous = true; 
-                this.recognizer.interimResults = false;
+                this.recognizer.interimResults = true; // <-- changed to get partials quickly
                 this.recognizer.lang = 'en-US'; 
+                this._restartAttempts = 0;
+                this._lastResultAt = Date.now();
                 this.logStatus("Voice Recognizer initialized. Target language: " + this.recognizer.lang);
                 
                 this.recognizer.onstart = () => { 
@@ -466,50 +479,105 @@
                     this.isListening = true;
                 };
 
-                this.recognizer.onend = () => {
-                    this.isListening = false; 
-
-                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                        this.logStatus(`Listening session ended. Recognizer state: ${this.recognizer.readyState}. Restarting instantly...`);
-                        setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
-                    } else {
-                        this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
-                        this.updateListeningUI(false);
-                    }
-                };
-
-                this.recognizer.onerror = (event) => {
-                    this.logStatus(`Voice Error (${event.error}).`, true);
-                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                        this.isListening = false;
-                        this.updateListeningUI(false);
-                        this.APP_STATE = 'AOD_LOCK'; 
-                    }
-                };
-                
+                // ----------------- onresult (DO NOT abort here) -----------------
                 this.recognizer.onresult = (event) => {
-                    const rawTranscript = event.results[0][0].transcript.trim();
-                    const upperTranscript = rawTranscript.toUpperCase();
-                    
+                    // Update last result time for watchdog
+                    this._lastResultAt = Date.now();
+
+                    // Build interim + final transcript
+                    let interim = '';
+                    let finalText = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        const r = event.results[i];
+                        if (r.isFinal) finalText += r[0].transcript + ' ';
+                        else interim += r[0].transcript + ' ';
+                    }
+
+                    // Stitch small splits: prepend previous interim to final if final exists
+                    if (finalText.trim().length > 0) {
+                        finalText = (this._lastInterim + ' ' + finalText).trim();
+                        this._lastInterim = '';
+                    } else {
+                        this._lastInterim = interim.trim();
+                    }
+
+                    const rawTranscript = (finalText + interim).trim();
                     const widget = document.getElementById('transcript-widget');
-                    if (widget) {
+                    if (widget && rawTranscript.length > 0) {
                         const isInitialText = widget.textContent.includes("Ready. Double-tap");
                         widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + rawTranscript;
                         widget.scrollTop = widget.scrollHeight; 
                     }
 
-                    this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
-                    
-                    // CRITICAL: Manually stop the continuous session after receiving a result.
-                    this.logStatus("Result received. Stopping session for processing and instant restart via onend.");
-                    this.recognizer.abort(); 
+                    if (rawTranscript.length > 0) {
+                        this.logStatus(`RAW Transcript received: "${rawTranscript}"`); 
+                    }
 
-                    if (this.MATCHES.length === 0) {
-                        this.handleInitialPasscode(upperTranscript);
-                    } else {
-                        this.handleLetterInput(upperTranscript);
+                    // IMPORTANT: do NOT abort the recognizer here — keep it running to avoid losing audio
+                    // Process only FINAL text for core logic (using finalText)
+                    if (finalText.trim().length > 0) {
+                        const upperTranscript = finalText.trim().toUpperCase();
+
+                        if (this.MATCHES.length === 0) {
+                            this.handleInitialPasscode(upperTranscript);
+                        } else {
+                            this.handleLetterInput(upperTranscript);
+                        }
                     }
                 };
+
+                // ----------------- onend with gentle backoff restart -----------------
+                this.recognizer.onend = () => {
+                    this.isListening = false; 
+
+                    if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
+                        this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
+                        this.updateListeningUI(false);
+                        return;
+                    }
+
+                    // Adaptive backoff restart strategy
+                    this._restartAttempts++;
+                    const backoff = Math.min(200 + (this._restartAttempts * 200), this._MAX_RESTART_BACKOFF_MS);
+                    const safeBackoff = Math.max(this.RESTART_DELAY_MS || 300, backoff);
+                    this.logStatus(`Listening session ended. Scheduling restart #${this._restartAttempts} in ${safeBackoff}ms.`);
+                    setTimeout(() => {
+                        if (this.APP_STATE !== 'AOD_DISPLAY_FINAL' && this.APP_STATE !== 'AOD_LOCK') {
+                            try {
+                                this.startListening();
+                            } catch (err) {
+                                this.logStatus("Restart startListening error: " + err.message, true);
+                            }
+                        }
+                    }, safeBackoff);
+                };
+
+                // onerror: permission errors are fatal; others will be handled by onend/backoff
+                this.recognizer.onerror = (event) => {
+                    this.logStatus(`Voice Error (${event.error}).`, true);
+                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'permission-denied') {
+                        this.isListening = false;
+                        this.updateListeningUI(false);
+                        this.APP_STATE = 'AOD_LOCK'; 
+                        this.logStatus("Microphone permission denied. Listening disabled.", true);
+                    }
+                };
+
+                // Small watchdog to detect silent stalls (if recognizer hangs without onend)
+                if (!this._watchdogTimer) {
+                    this._watchdogTimer = setInterval(() => {
+                        if (!this.recognizer) return;
+                        const now = Date.now();
+                        // If we haven't seen any result in the last ~18 seconds, restart to recover
+                        if (this.isListening && (now - this._lastResultAt) > (this.RECOGNIZER_WATCHDOG_MS * 6)) {
+                            this.logStatus("Watchdog detected long silence. Restarting recognizer to recover.");
+                            try {
+                                // use abort to force onend -> restart logic with backoff
+                                this.recognizer.abort();
+                            } catch (e) { /* ignore */ }
+                        }
+                    }, this.RECOGNIZER_WATCHDOG_MS);
+                }
             },
             
             // --- UI/Helper Functions ---
@@ -1179,4 +1247,3 @@
     </script>
 </body>
 </html>
-
