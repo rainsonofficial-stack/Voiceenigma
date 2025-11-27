@@ -1,21 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <title>OS | AOD Discreet Magic</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <!-- PWA CRITERIA: Manifest Link -->
+    <title>OS | AOD Discreet Magic</title> 
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" href="/icon-180x180.png">
+    
+    <!-- Loads external CSS for styling -->
     <style>
         /* AOD Styling (Minimal, Discreet, Dark) */
         html, body {
             margin: 0;
             padding: 0;
             font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden;
+            overflow: hidden; 
             height: 100%;
             background: #000;
         }
+
         #app {
             width: 100%;
             height: 100%;
@@ -27,121 +31,327 @@
             flex-direction: column;
             align-items: center;
             user-select: none;
-            color: #c4c4c4;
+            color: #c4c4c4; 
             box-sizing: border-box;
-            padding-top: 180px;
-            padding-bottom: 30px;
+            padding-top: 180px; 
+            padding-bottom: 30px; 
         }
-        #clock-container { display:flex; flex-direction:column; align-items:center; z-index:10; padding:20px; margin:-20px; -webkit-tap-highlight-color: transparent; outline:none; cursor:pointer; }
-        .time-display { font-size:80px; font-weight:300; margin-bottom:5px; color:#fff; }
-        .date-display { font-size:16px; font-weight:400; margin-bottom:25px; color:#c4c4c4; }
-        #system-notification { width:90%; max-width:300px; padding:5px 10px; background:#282a2d; border-radius:6px; display:flex; align-items:center; transition:opacity .3s; margin-top:10px; min-height:30px; user-select:none; }
-        .hidden { opacity:0 !important; pointer-events:none; }
-        .notif-icon-svg { margin-right:6px; color:#c4c4c4; width:14px; height:14px; line-height:1; flex-shrink:0; transition:transform .5s; }
-        .final-word-placeholder { color:#fff; font-weight:500; letter-spacing:.5px; }
-        .notif-text { font-size:12px; color:#d1d1d1; font-weight:500; word-break:break-word; line-height:1.3; white-space:normal; flex-grow:1; text-align:center; }
+        
+        /* Container for Tap Area */
+        #clock-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 10;
+            padding: 20px; 
+            margin: -20px; 
+            -webkit-tap-highlight-color: transparent; 
+            outline: none; 
+            cursor: pointer; /* Indicate it's interactive */
+        }
+
+        /* Clock Widget */
+        .time-display {
+            font-size: 80px;
+            font-weight: 300;
+            margin-bottom: 5px;
+            color: #ffffff; 
+            -webkit-tap-highlight-color: transparent; 
+        }
+        .date-display {
+            font-size: 16px;
+            font-weight: 400;
+            margin-bottom: 25px;
+            color: #c4c4c4; 
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* --- Notification Bar --- */
+        #system-notification {
+            width: 90%;
+            max-width: 300px; 
+            padding: 5px 10px; 
+            background: #282a2d; 
+            border-radius: 6px; 
+            display: flex;
+            align-items: center; 
+            transition: opacity 0.3s ease-in-out; /* Smoother fade for toggle */
+            margin-top: 10px; 
+            min-height: 30px; 
+            user-select: none;
+        }
+        
+        /* New style for hiding the notification widget */
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none; /* Prevents accidental interaction when hidden */
+        }
+        
+        .notif-icon-svg {
+            margin-right: 6px; 
+            color: #c4c4c4; 
+            width: 14px; 
+            height: 14px;
+            line-height: 1;
+            flex-shrink: 0;
+            transition: transform 0.5s;
+        }
+        .final-word-placeholder {
+            color: #ffffff; 
+            font-weight: 500; 
+            letter-spacing: 0.5px;
+        }
+        .notif-text {
+            font-size: 12px; 
+            color: #d1d1d1;
+            font-weight: 500; 
+            word-break: break-word; 
+            line-height: 1.3;
+            white-space: normal;
+            flex-grow: 1;
+            text-align: center; 
+        }
+        
+        /* Transcript Widget (Debug) */
         #transcript-widget {
-            width:90%; max-width:400px; background:rgba(40,42,45,0.8); color:#d1d1d1; font-size:10px; padding:8px; margin:15px 0; border-radius:6px; max-height:150px; overflow-y:auto; display:none; box-shadow:0 0 10px rgba(0,0,0,.5); line-height:1.4; flex-shrink:0; white-space:pre-wrap;
+            width: 90%;
+            max-width: 400px;
+            background: rgba(40, 42, 45, 0.8);
+            color: #d1d1d1; 
+            font-size: 10px;
+            padding: 8px;
+            margin: 15px 0;
+            border-radius: 6px;
+            max-height: 150px;
+            overflow-y: auto;
+            display: none; 
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            line-height: 1.4;
+            flex-shrink: 0;
+            white-space: pre-wrap;
         }
-        .listening-active { animation:pulse-mic 1.5s infinite; }
-        @keyframes pulse-mic { 0%{transform:scale(1);opacity:.6}50%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:.6} }
-        #bottom-icons { position:absolute; bottom:30px; width:90%; max-width:380px; display:flex; justify-content:space-between; align-items:flex-end; box-sizing:border-box; padding:0 10px; margin-top:auto; }
-        #music-player { flex-grow:1; max-width:250px; min-width:150px; padding:8px; background:rgba(255,255,255,0.1); backdrop-filter:blur(5px); border-radius:12px; display:flex; align-items:center; margin:0 10px; box-sizing:border-box; }
-        .album-art { width:30px; height:30px; background:#4f5358; border-radius:6px; margin-right:10px; display:flex; align-items:center; justify-content:center; }
-        .song-info { flex-grow:1; overflow:hidden; white-space:nowrap; }
-        .song-title { color:white; font-weight:600; font-size:13px; margin-bottom:2px; }
-        .song-artist { font-size:11px; color:#c4c4c4; }
-        .timeline { margin-left:10px; font-size:12px; flex-shrink:0; }
-        #current-second { color:white; font-weight:600; }
-        .bottom-icon { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; color:#c4c4c4; cursor:pointer; flex-shrink:0; }
+
+        /* Listening State Styles */
+        .listening-active {
+            animation: pulse-mic 1.5s infinite;
+        }
+        @keyframes pulse-mic {
+            0% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.6; }
+        }
+
+        /* --- Bottom Icons Container --- */
+        #bottom-icons {
+            position: absolute;
+            bottom: 30px;
+            width: 90%;
+            max-width: 380px; 
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end; 
+            box-sizing: border-box;
+            padding: 0 10px;
+            margin-top: auto; 
+        }
+        
+        /* --- Spotify Widget --- */
+        #music-player {
+            flex-grow: 1;
+            max-width: 250px; 
+            min-width: 150px;
+            padding: 8px; 
+            background: rgba(255, 255, 255, 0.1); 
+            backdrop-filter: blur(5px);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            margin: 0 10px; 
+            box-sizing: border-box;
+        }
+
+        .album-art {
+            width: 30px; 
+            height: 30px;
+            background: #4f5358;
+            border-radius: 6px;
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .album-art svg {
+            width: 16px;
+            height: 16px;
+        }
+        .song-info {
+            flex-grow: 1;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        .song-title {
+            color: white;
+            font-weight: 600;
+            font-size: 13px; 
+            margin-bottom: 2px;
+        }
+        .song-artist {
+            font-size: 11px; 
+            color: #c4c4c4;
+        }
+        .timeline {
+            margin-left: 10px;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        #current-second {
+            color: white;
+            font-weight: 600;
+        }
+        
+        .bottom-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #c4c4c4;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body>
     <div id="app">
+        <!-- Clock Container (Expanded Tap Target) -->
         <div id="clock-container">
             <div class="time-display" id="aod-time"></div>
             <div class="date-display" id="aod-date"></div>
         </div>
 
+        <!-- System Notification (Used for Word List / Final Word Reveal) -->
         <div id="system-notification">
             <div class="notif-icon-svg" id="notif-icon">
+                <!-- Initial Gear SVG -->
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>
             </div>
             <div class="notif-text" id="notif-text">System Update Available</div>
         </div>
 
-        <div id="transcript-widget">Ready. Double-tap blank area to hide/show.</div>
+        <!-- Debug Transcript Widget -->
+        <div id="transcript-widget">
+            Ready. Double-tap blank area to hide/show.
+        </div>
 
+        <!-- Bottom Icons and Music Player -->
         <div id="bottom-icons">
             <div class="bottom-icon" title="Phone">
                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.08 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
             </div>
+            
+            <!-- Music Player Widget -->
             <div id="music-player">
                 <div class="album-art">
+                    <!-- Music Note SVG Icon -->
                     <svg viewBox="0 0 24 24" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
                 </div>
                 <div class="song-info">
                     <div class="song-title">Shape of You</div>
                     <div class="song-artist">Ed Sheeran</div>
                 </div>
-                <div class="timeline">0:<span id="current-second">00</span></div>
+                <div class="timeline">
+                    0:<span id="current-second">00</span>
+                </div>
             </div>
+
             <div class="bottom-icon" title="Camera">
                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
             </div>
         </div>
     </div>
-
-    <!-- expect LARGE_DICTIONARY from external file -->
-    <script src="./large_dictionary.js"></script>
-
+    
+    <!-- Load the external dictionary file -->
+    <script src="./large_dictionary.js"></script> 
+    
+    <!-- Load the main application logic -->
     <script>
+        // NOTE: The LARGE_DICTIONARY constant is expected to be loaded via large_dictionary.js
+        
         const APP = {
+            // Configuration
             PASSCODE_LENGTH: 4,
-            RESTART_DELAY_MS: 300,
+            // MINIMAL RESTART DELAY: increased to 300ms for gentler restarts
+            RESTART_DELAY_MS: 300, 
+            // Watchdog interval (ms) used to detect stalls
             RECOGNIZER_WATCHDOG_MS: 3000,
             SESSION_KEY: 'aod_magic_state',
-            APP_STATE: 'AOD_LOCK',
-            isListening: false,
-            MATCHES: [],
-            HISTORY: [],
-            CURRENT_POSITION_INDEX: 0,
-            FULL_PASSCODE: '',
-            APPLIED_LETTERS: '',
+            
+            // State Variables
+            APP_STATE: 'AOD_LOCK', 
+            isListening: false,     
+            MATCHES: [], 
+            HISTORY: [], 
+            CURRENT_POSITION_INDEX: 0, 
+            FULL_PASSCODE: '',          // Stores the 4-digit D1D2D3D4 code
+            APPLIED_LETTERS: '',        // Stores the sequence of applied letters
             recognizer: null,
+
+            // Stitch/interim helper
             _lastInterim: '',
             _watchdogTimer: null,
             _lastResultAt: 0,
             _restartAttempts: 0,
-            _MAX_RESTART_BACKOFF_MS: 10000,
-            _prevFinalTail: '',
+            _MAX_RESTART_BACKOFF_MS: 10000, // 10s cap
 
-            // Dedupe trackers to avoid duplicate visible lines and duplicate processing
-            _lastProcessedResultIndex: -1,
-            _lastFinalProcessed: '',
-            _lastWidgetLineIsInterim: false,
-
+            // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
-                1: new Set('AEFHIKLMNTVWXYZ'.split('')),
-                2: new Set('BDGJPRU'.split('')),
-                3: new Set('COS'.split('')),
+                1: new Set('AEFHIKLMNTVWXYZ'.split('')), // Straight lines/corners
+                2: new Set('BDGJPRU'.split('')),         // Curved/Mixed lines
+                3: new Set('COS'.split('')),             // Circular/Round shapes
             },
 
+            // D4 Trigger Words (1 = Word/Walk/Watch, 2 = Different, 3 = Option)
             D4_TRIGGERS: {
-                'WORD': 1, 'WORDS': 1, 'WALK':1, 'WATT':1, 'WATTS':1, 'WATCH':1, 'WHAT':1, "WHAT'S":1, 'WARNING':1,
-                'DIFFERENT':2, 'DIFFERENCE':2, 'THE':2, 'DIP':2, 'DEEP':2,
-                'OPTION':3, 'OPTIONS':3, 'AUCTION':3, 'AUCTIONS':3, 'ACTION':3, 'ACTIONS':3, 'OFTEN':3
+                'WORD': 1, 'WORDS': 1,
+                'WALK': 1, 
+                'WATT': 1, 'WATTS': 1, 
+                'WATCH': 1, 'WHAT': 1,
+                'WHAT'S': 1, 'WARNING': 1,
+                'DIFFERENT': 2, 'DIFFERENCE': 2,
+                'THE': 2, 'DIP': 2, 'DEEP': 2,
+                'OPTION': 3, 'OPTIONS': 3,
+                'AUCTION': 3, 'AUCTIONS': 3,
+                'ACTION': 3, 'ACTIONS': 3,
+                'OFTEN': 3,
             },
 
+            // Single-digit and 'teen' number word mapping for D1, D2, D3 extraction
             NUMBER_WORDS: {
-                'ZERO':0,'ONE':1,'TWO':2,'THREE':3,'FOUR':4,'FIVE':5,'SIX':6,'SEVEN':7,'EIGHT':8,'NINE':9,
-                'TEN':1,'ELEVEN':1,'TWELVE':2,'THIRTEEN':3,'FOURTEEN':4,'FIFTEEN':5,'SIXTEEN':6,'SEVENTEEN':7,'EIGHTEEN':8,'NINETEEN':9,
-                'WAN':1,'WON':1,'WANT':1,'WAND':1,'WONDER':1,'TO':2,'TOO':2,'TREE':3,'FREE':3,'FOR':4,'FINE':5,'SEX':6,'ATE':8,'EIGHT':8,'I':8,'EYE':8,'HEIGHT':8,'IT':8
+                'ZERO': 0, // Supports 'ZERO' word
+                'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 
+                'FIVE': 5, 'SIX': 6, 'SEVEN': 7, 'EIGHT': 8, 'NINE': 9,
+                // Teens only provide the D1 number
+                'TEN': 1, 'ELEVEN': 1, 'TWELVE': 2, 'THIRTEEN': 3, 'FOURTEEN': 4,
+                'FIFTEEN': 5, 'SIXTEEN': 6, 'SEVENTEEN': 7, 'EIGHTEEN': 8, 'NINETEEN': 9,
+                
+                // Homophones and common phonetic errors
+                'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
+                'TO': 2, 'TOO': 2, 
+                'TREE': 3, 'FREE': 3, 
+                'FOR': 4, 
+                'FINE': 5, 
+                'SEX': 6, 
+                'ATE': 8, 'EIGHT': 8, 'I': 8, 'EYE': 8, 'HEIGHT': 8, 
+                'IT': 8, 
             },
 
+            // SVG Icons
             ICON_GEAR_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-8M20 12h-8M4 12h8M12 4v8M18.36 5.64l-4.24 4.24M5.64 18.36l4.24-4.24M18.36 18.36l-4.24-4.24M5.64 5.64l4.24 4.24"></path></svg>`,
             ICON_CHAT_SVG: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`,
 
+            // --- State Persistence ---
             saveState() {
                 try {
                     const stateToSave = {
@@ -149,8 +359,8 @@
                         history: this.HISTORY,
                         position: this.CURRENT_POSITION_INDEX,
                         state: this.APP_STATE,
-                        fullPasscode: this.FULL_PASSCODE,
-                        appliedLetters: this.APPLIED_LETTERS
+                        fullPasscode: this.FULL_PASSCODE,        
+                        appliedLetters: this.APPLIED_LETTERS     
                     };
                     sessionStorage.setItem(this.SESSION_KEY, JSON.stringify(stateToSave));
                 } catch (e) {
@@ -167,28 +377,29 @@
                         this.HISTORY = state.history || [];
                         this.CURRENT_POSITION_INDEX = state.position || 0;
                         this.APP_STATE = state.state || 'AOD_LOCK';
-                        this.FULL_PASSCODE = state.fullPasscode || '';
-                        this.APPLIED_LETTERS = state.appliedLetters || '';
+                        this.FULL_PASSCODE = state.fullPasscode || '';      
+                        this.APPLIED_LETTERS = state.appliedLetters || '';  
 
                         if (this.MATCHES.length > 0 && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                             this.logStatus("State loaded. Attempting to resume puzzle.");
-                            this.APP_STATE = 'AOD_LISTENING';
+                            this.APP_STATE = 'AOD_LISTENING'; // Set state for listening start
                             this.updateNotification('WORD_LIST');
-                            return true;
+                            return true; // Indicates successful resume
                         }
                     }
                 } catch (e) {
                     this.logStatus(`Error loading state: ${e.message}. Starting fresh.`, true);
                     sessionStorage.removeItem(this.SESSION_KEY);
                 }
-                return false;
+                return false; // Indicates start from scratch
             },
 
             clearState() {
                 sessionStorage.removeItem(this.SESSION_KEY);
                 this.logStatus("Cleared session state.");
             },
-
+            
+            // --- Voice Recognition Control (Continuous Listening) ---
             startListening() {
                 if (this.isListening) {
                     if (this.recognizer) {
@@ -201,8 +412,8 @@
                 if (this.APP_STATE === 'AOD_LOCK') {
                     this.APP_STATE = 'AOD_LISTENING';
                 }
-                this.updateListeningUI(true);
-
+                this.updateListeningUI(true); 
+                
                 try {
                     if (!this.recognizer) {
                         this.logStatus("Recognizer not initialized. Cannot start listening.", true);
@@ -225,255 +436,167 @@
                     this.updateListeningUI(false);
                 }
             },
-
+            
             stopListening() {
+                // Permanently stops the mic (for final word reveal or hard reset)
                 this.isListening = false;
-                this.APP_STATE = 'AOD_DISPLAY_FINAL';
-                this.updateListeningUI(false);
+                this.APP_STATE = 'AOD_DISPLAY_FINAL'; 
+                this.updateListeningUI(false); 
                 try {
-                    if (this.recognizer) this.recognizer.stop();
+                    if (this.recognizer) this.recognizer.stop(); // graceful stop: allows final result
                     this.logStatus("Stopped continuous listening permanently (graceful).");
                 } catch (e) {}
             },
 
             updateListeningUI(isActive) {
                 const notifIcon = document.getElementById('notif-icon');
-                if (isActive) notifIcon.classList.add('listening-active'); else notifIcon.classList.remove('listening-active');
-            },
-
-            hasTriggerWord(inputUpper) {
-                if (!inputUpper) return false;
-                const words = inputUpper.split(/\s+/).map(w => w.replace(/[^\w']/g,''));
-                for (const w of words) {
-                    if (this.D4_TRIGGERS[w]) return true;
+                
+                if (isActive) {
+                    notifIcon.classList.add('listening-active'); 
+                } else {
+                    notifIcon.classList.remove('listening-active'); 
                 }
-                return false;
             },
 
             initVoiceRecognition() {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
                 if (!SpeechRecognition) {
                     this.logStatus("Speech Recognition not supported.", true);
                     return;
                 }
-
+                
                 this.recognizer = new SpeechRecognition();
-                this.recognizer.continuous = true;
-                this.recognizer.interimResults = true;
-                this.recognizer.lang = 'en-US';
+                this.recognizer.continuous = true; 
+                this.recognizer.interimResults = true; // <-- changed to get partials quickly
+                this.recognizer.lang = 'en-US'; 
                 this._restartAttempts = 0;
                 this._lastResultAt = Date.now();
                 this.logStatus("Voice Recognizer initialized. Target language: " + this.recognizer.lang);
+                
+                this.recognizer.onstart = () => { 
+                    this.logStatus("Recognizing..."); 
+                    this.updateListeningUI(true);
+                    this.isListening = true;
+                };
 
-                this.recognizer.onstart = () => { this.logStatus("Recognizing..."); this.updateListeningUI(true); this.isListening = true; };
-
-                // Key onresult changes:
-                // - process result indexes only once via _lastProcessedResultIndex
-                // - dedupe final processing via _lastFinalProcessed
-                // - replace interim line instead of appending (avoid repeated lines)
+                // ----------------- onresult (DO NOT abort here) -----------------
                 this.recognizer.onresult = (event) => {
+                    // Update last result time for watchdog
                     this._lastResultAt = Date.now();
 
-                    // Build separate interim + final collections (but only for newly produced result indices)
+                    // Build interim + final transcript
                     let interim = '';
-                    let collectedFinals = [];
-
-                    // Process only indices >= event.resultIndex and > _lastProcessedResultIndex
+                    let finalText = '';
                     for (let i = event.resultIndex; i < event.results.length; ++i) {
-                        // If we've already processed this index previously, skip it
-                        if (i <= this._lastProcessedResultIndex) continue;
-
                         const r = event.results[i];
-                        if (r.isFinal) {
-                            collectedFinals.push(r[0].transcript.trim());
-                        } else {
-                            interim = interim + r[0].transcript.trim() + ' ';
-                        }
+                        if (r.isFinal) finalText += r[0].transcript + ' ';
+                        else interim += r[0].transcript + ' ';
                     }
 
-                    // mark we've processed up to the most recent result index
-                    this._lastProcessedResultIndex = Math.max(this._lastProcessedResultIndex, event.results.length - 1);
+                    // Stitch small splits: prepend previous interim to final if final exists
+                    if (finalText.trim().length > 0) {
+                        finalText = (this._lastInterim + ' ' + finalText).trim();
+                        this._lastInterim = '';
+                    } else {
+                        this._lastInterim = interim.trim();
+                    }
 
-                    const finalText = collectedFinals.join(' ').trim(); // combine newly finalized bits
-                    const rawTranscript = (finalText + ' ' + interim).trim();
+                    const rawTranscript = (finalText + interim).trim();
                     const widget = document.getElementById('transcript-widget');
-
-                    // Widget update logic:
-                    // - Add finalText if present (but avoid adding finals that are duplicates of last processed final)
-                    // - For interim: replace last interim line instead of appending repeatedly
-                    if (widget) {
-                        try {
-                            const isInitialText = widget.textContent.includes("Ready. Double-tap");
-                            // Normalize widget lines
-                            let lines = isInitialText ? [] : widget.textContent.split('\n').filter(Boolean);
-
-                            if (finalText.length > 0) {
-                                const normalizedFinal = finalText.trim();
-                                // if final equals or contains previous final or vice versa, skip appending to prevent duplicates
-                                const prevFinal = (this._lastFinalProcessed || '').trim();
-                                const isDuplicateFinal = prevFinal.length > 0 && (
-                                    normalizedFinal === prevFinal ||
-                                    normalizedFinal.includes(prevFinal) ||
-                                    prevFinal.includes(normalizedFinal)
-                                );
-
-                                if (!isDuplicateFinal) {
-                                    lines.push(normalizedFinal);
-                                    this._lastFinalProcessed = normalizedFinal;
-                                } else {
-                                    // update lastFinalProcessed to the longer one (if expanded)
-                                    if (normalizedFinal.length > prevFinal.length) this._lastFinalProcessed = normalizedFinal;
-                                }
-                                // a final has been added -> any interim line is now stale
-                                this._lastWidgetLineIsInterim = false;
-                            }
-
-                            // handle interim: show/replace last interim line
-                            const interimTrim = interim.trim();
-                            if (interimTrim.length > 0) {
-                                if (this._lastWidgetLineIsInterim && lines.length > 0) {
-                                    // replace last line
-                                    lines[lines.length - 1] = interimTrim;
-                                } else {
-                                    // append interim as a new line
-                                    lines.push(interimTrim);
-                                    this._lastWidgetLineIsInterim = true;
-                                }
-                            }
-
-                            // If there were no finals or interims (nothing new), leave widget as-is
-                            if (lines.length === 0 && isInitialText) {
-                                widget.textContent = "Ready. Double-tap blank area to hide/show.";
-                            } else {
-                                widget.textContent = lines.join('\n');
-                            }
-                            widget.scrollTop = widget.scrollHeight;
-                        } catch (e) { /* ignore widget errors */ }
+                    if (widget && rawTranscript.length > 0) {
+                        const isInitialText = widget.textContent.includes("Ready. Double-tap");
+                        widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + rawTranscript;
+                        widget.scrollTop = widget.scrollHeight; 
                     }
 
                     if (rawTranscript.length > 0) {
-                        this.logStatus(`RAW Transcript received: "${rawTranscript}"`);
+                        this.logStatus(`RAW Transcript received: "${rawTranscript}"`); 
                     }
 
-                    // Process only if there is a new finalText to act on.
+                    // IMPORTANT: do NOT abort the recognizer here — keep it running to avoid losing audio
+                    // Process only FINAL text for core logic (using finalText)
                     if (finalText.trim().length > 0) {
                         const upperTranscript = finalText.trim().toUpperCase();
 
-                        // Cross-boundary and other logic preserved below (uses prevFinalTail)
-                        try {
-                            const prevTailRaw = (this._prevFinalTail || '').trim();
-                            const prevTail = prevTailRaw.replace(/[^\w']/g,'').toUpperCase();
-                            const thisFirstRaw = (upperTranscript.split(/\s+/)[0] || '').trim();
-                            const thisFirst = thisFirstRaw.replace(/[^\w']/g,'').toUpperCase();
-
-                            if (prevTail.length > 0 && thisFirst.length > 0) {
-                                if (prevTail === thisFirst) {
-                                    this.logStatus(`Cross-boundary repetition detected: "${prevTail} ${thisFirst}"`);
-                                    const fakeRepetition = (thisFirst + ' ' + thisFirst).toUpperCase();
-                                    if (this.MATCHES.length === 0) {
-                                        this.handleInitialPasscode(fakeRepetition);
-                                    } else {
-                                        this.handleLetterInput(fakeRepetition);
-                                    }
-                                } else if (thisFirst === 'INTERESTING') {
-                                    this.logStatus(`Cross-boundary 'interesting' predecessor detected: "${prevTail} INTERESTING"`);
-                                    const combined = (prevTail + ' INTERESTING').toUpperCase();
-                                    if (this.MATCHES.length === 0) {
-                                        this.handleInitialPasscode(combined);
-                                    } else {
-                                        this.handleLetterInput(combined);
-                                    }
-                                } else {
-                                    const isPrevDigits = /^[0-9]+$/.test(prevTail);
-                                    const isPrevNumberWord = (this.NUMBER_WORDS && this.NUMBER_WORDS[prevTail] !== undefined);
-                                    if ((isPrevDigits || isPrevNumberWord) && this.D4_TRIGGERS[thisFirst]) {
-                                        this.logStatus(`Cross-boundary number + trigger detected: "${prevTail} ${thisFirst}"`);
-                                        const combinedNumTrigger = (prevTail + ' ' + thisFirst).toUpperCase();
-                                        this.handleInitialPasscode(combinedNumTrigger);
-                                    } else {
-                                        const combinedBoundary = (prevTail + ' ' + thisFirst).trim().toUpperCase();
-                                        if (this.hasTriggerWord(combinedBoundary)) {
-                                            this.logStatus(`Cross-boundary candidate detected: "${combinedBoundary}" — processing.`);
-                                            if (this.MATCHES.length === 0) {
-                                                this.handleInitialPasscode(combinedBoundary);
-                                            } else {
-                                                this.handleLetterInput(combinedBoundary);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            this.logStatus("Cross-boundary check failed: " + e.message, true);
-                        }
-
-                        // Normal processing of the new final
                         if (this.MATCHES.length === 0) {
                             this.handleInitialPasscode(upperTranscript);
                         } else {
                             this.handleLetterInput(upperTranscript);
                         }
-
-                        // Update prevFinalTail for the next cross-boundary check
-                        try {
-                            const words = upperTranscript.split(/\s+/).filter(Boolean);
-                            this._prevFinalTail = words.length > 0 ? words[words.length - 1].replace(/[^\w']/g,'') : '';
-                        } catch (e) {
-                            this._prevFinalTail = '';
-                        }
                     }
                 };
 
+                // ----------------- onend with gentle backoff restart -----------------
                 this.recognizer.onend = () => {
-                    this.isListening = false;
+                    this.isListening = false; 
+
                     if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
                         this.updateListeningUI(false);
                         return;
                     }
+
+                    // Adaptive backoff restart strategy
                     this._restartAttempts++;
                     const backoff = Math.min(200 + (this._restartAttempts * 200), this._MAX_RESTART_BACKOFF_MS);
                     const safeBackoff = Math.max(this.RESTART_DELAY_MS || 300, backoff);
                     this.logStatus(`Listening session ended. Scheduling restart #${this._restartAttempts} in ${safeBackoff}ms.`);
                     setTimeout(() => {
                         if (this.APP_STATE !== 'AOD_DISPLAY_FINAL' && this.APP_STATE !== 'AOD_LOCK') {
-                            try { this.startListening(); } catch (err) { this.logStatus("Restart startListening error: " + err.message, true); }
+                            try {
+                                this.startListening();
+                            } catch (err) {
+                                this.logStatus("Restart startListening error: " + err.message, true);
+                            }
                         }
                     }, safeBackoff);
                 };
 
+                // onerror: permission errors are fatal; others will be handled by onend/backoff
                 this.recognizer.onerror = (event) => {
                     this.logStatus(`Voice Error (${event.error}).`, true);
                     if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'permission-denied') {
                         this.isListening = false;
                         this.updateListeningUI(false);
-                        this.APP_STATE = 'AOD_LOCK';
+                        this.APP_STATE = 'AOD_LOCK'; 
                         this.logStatus("Microphone permission denied. Listening disabled.", true);
                     }
                 };
 
+                // Small watchdog to detect silent stalls (if recognizer hangs without onend)
                 if (!this._watchdogTimer) {
                     this._watchdogTimer = setInterval(() => {
                         if (!this.recognizer) return;
                         const now = Date.now();
+                        // If we haven't seen any result in the last ~18 seconds, restart to recover
                         if (this.isListening && (now - this._lastResultAt) > (this.RECOGNIZER_WATCHDOG_MS * 6)) {
                             this.logStatus("Watchdog detected long silence. Restarting recognizer to recover.");
-                            try { this.recognizer.abort(); } catch (e) {}
+                            try {
+                                // use abort to force onend -> restart logic with backoff
+                                this.recognizer.abort();
+                            } catch (e) { /* ignore */ }
                         }
                     }, this.RECOGNIZER_WATCHDOG_MS);
                 }
             },
-
+            
+            // --- UI/Helper Functions ---
+            
             updateTime() {
                 const now = new Date();
                 let hours = now.getHours();
-                const minutes = now.getMinutes().toString().padStart(2,'0');
+                const minutes = now.getMinutes().toString().padStart(2, '0');
+                
                 hours = hours % 12;
-                hours = hours ? hours : 12;
-                const time = `${hours}:${minutes}`;
-                const date = now.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+                hours = hours ? hours : 12; 
+                
+                const time = `${hours}:${minutes}`; 
+                const date = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
                 const timeEl = document.getElementById('aod-time');
                 const dateEl = document.getElementById('aod-date');
+
                 if (timeEl) timeEl.textContent = time;
                 if (dateEl) dateEl.textContent = date;
             },
@@ -481,41 +604,83 @@
             getVowelIndices(word) {
                 const indices = [];
                 for (let i = 0; i < word.length; i++) {
-                    if (word[i].toUpperCase().match(/[AEIOU]/)) indices.push(i+1);
+                    if (word[i].toUpperCase().match(/[AEIOU]/)) {
+                        indices.push(i + 1); // 1-based position
+                    }
                 }
                 return indices;
             },
-
+            
+            /**
+             * Extracts unique words, limits to 6, and appends ", more..." if truncated.
+             */
             getDistinctWordPreview(matches) {
-                if (!matches || matches.length === 0) return "";
+                if (!matches || matches.length === 0) {
+                    return "";
+                }
+
                 const uniqueWords = Array.from(new Set(matches));
+
                 const maxWordsToShow = 6;
                 const isTruncated = uniqueWords.length > maxWordsToShow;
-                const displayedWords = uniqueWords.slice(0, maxWordsToShow).map(w => w.toLowerCase());
+
+                const displayedWords = uniqueWords
+                    .slice(0, maxWordsToShow)
+                    .map(w => w.toLowerCase());
+
                 let result = displayedWords.join(", ");
-                if (isTruncated) result += ", more...";
+
+                if (isTruncated) {
+                    result += ", more...";
+                }
+                
                 return result;
             },
 
+
+            /**
+             * Single Tap: Ensures mic is active AND toggles notification visibility.
+             */
             handleSingleTap(event) {
+                // 1. Notification Toggle (NEW USER REQUEST)
                 this.toggleNotificationWidget();
-                if (!this.recognizer) { this.logStatus("Single Tap: Recognizer not initialized.", true); return; }
-                if (this.APP_STATE === 'AOD_DISPLAY_FINAL') { this.logStatus("Single Tap: In final display state (Ignored mic start)."); return; }
+
+                // 2. Voice Recognition Logic (Existing)
+                if (!this.recognizer) {
+                    this.logStatus("Single Tap: Recognizer not initialized.", true);
+                    return;
+                }
+
+                if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
+                    this.logStatus("Single Tap: In final display state (Ignored mic start).");
+                    return;
+                }
+                
                 const readyState = this.recognizer.readyState;
                 this.logStatus(`Single Tap detected. Recognizer readyState: ${readyState}, isListening flag: ${this.isListening}`);
+
                 if (readyState !== 'listening') {
                     this.isListening = false;
                     this.logStatus("Forcing mic restart (readyState was not 'listening').");
-                    this.startListening();
+                    this.startListening(); 
                 } else {
                     this.logStatus("Mic is already active ('listening'). Tap ignored.");
                 }
             },
 
-            handleDoubleTap(event) { this.logStatus("Double Tap: Master Reset."); this.resetApp(true); },
-
+            // Master reset on double-tap 
+            handleDoubleTap(event) {
+                this.logStatus("Double Tap: Master Reset.");
+                this.resetApp(true); 
+            },
+            
+            // Toggle Transcript Widget (debug)
             toggleTranscriptWidget(event) {
-                if (event.target.closest('#clock-container') || event.target.closest('#music-player')) return;
+                // Ignore double clicks on the clock container or player
+                if (event.target.closest('#clock-container') || event.target.closest('#music-player')) {
+                    return; 
+                }
+                
                 const widget = document.getElementById('transcript-widget');
                 if (widget) {
                     const isHidden = widget.style.display === 'none' || widget.style.display === '';
@@ -523,7 +688,10 @@
                     this.logStatus(`Transcript widget ${isHidden ? 'shown' : 'hidden'}.`);
                 }
             },
-
+            
+            /**
+             * Toggles Notification Widget visibility. Called by single-tap on clock.
+             */
             toggleNotificationWidget() {
                 const notif = document.getElementById('system-notification');
                 if (notif) {
@@ -533,20 +701,36 @@
                 }
             },
 
-            filterDictionary(d1,d2,d3,d4,initialList) {
-                if (typeof initialList === 'undefined' || !Array.isArray(initialList) || initialList.length === 0) {
+            // --- Core Logic (Filter functions) ---
+            filterDictionary(d1, d2, d3, d4, initialList) {
+                if (typeof initialList === 'undefined' || !Array.isArray(initialList) || initialList.length === 0) { 
                     this.logStatus("Dictionary not initialized or empty during filtering in filterDictionary.", true);
-                    return [];
-                }
+                    return []; 
+                } 
+                
                 const dictionary = initialList.map(w => w.toUpperCase());
+                
                 return dictionary.filter(word => {
                     const length = word.length;
                     const vIndices = this.getVowelIndices(word);
                     const firstLetter = word[0];
-                    if (d1 === 0) { if (length !== 10) return false; }
-                    else { if (length !== d1 && length !== (d1 + 10)) return false; }
+
+                    // D1 (Word Length)
+                    if (d1 === 0) {
+                        if (length !== 10) return false;
+                    } else {
+                        if (length !== d1 && length !== (d1 + 10)) return false;
+                    }
+                    
+                    // D2 (First Vowel Position)
+                    // D2=0 is the wildcard
                     if (d2 > 0 && (vIndices.length < 1 || vIndices[0] !== d2)) return false;
+                    
+                    // D3 (Second Vowel Position)
+                    // D3=0 is the wildcard
                     if (d3 > 0 && (vIndices.length < 2 || vIndices[1] !== d3)) return false;
+                    
+                    // D4 (First Letter Shape)
                     if (d4 > 0) {
                         const shapeSet = this.LETTER_SHAPES[d4];
                         if (!shapeSet || !shapeSet.has(firstLetter)) return false;
@@ -554,125 +738,216 @@
                     return true;
                 });
             },
-
+            
             getDisambiguationIndex(matches) {
-                if (matches.length <= 1) return 0;
+                if (matches.length <= 1) return 0; 
+                
+                // Determine the minimum length among all matched words
                 const minLength = Math.min(...matches.map(w => w.length));
-                let bestIndex = 0;
-                let maxUniqueLetters = 0;
-                for (let i = 0; i < minLength; i++) {
-                    const lettersAtPosition = matches.map(word => word.length > i ? word[i] : null).filter(l => l !== null);
+                let bestIndex = 0; 
+                let maxUniqueLetters = 0; 
+
+                // Check every position up to the minimum length of all matched words
+                for (let i = 0; i < minLength; i++) {   
+                    const lettersAtPosition = matches
+                        .map(word => word.length > i ? word[i] : null)
+                        .filter(l => l !== null);
+                    
                     const uniqueCount = new Set(lettersAtPosition).size;
-                    if (uniqueCount > maxUniqueLetters) { maxUniqueLetters = uniqueCount; bestIndex = i + 1; }
+
+                    // Update if the current position has strictly MORE unique letters
+                    if (uniqueCount > maxUniqueLetters) { 
+                        maxUniqueLetters = uniqueCount;
+                        bestIndex = i + 1; // 1-based index
+                    }
                 }
                 return bestIndex;
             },
 
-            getSwappedD2D3(d2,d3) {
+            // D2/D3 Interchange Rule Logic (New Feature 3)
+            getSwappedD2D3(d2, d3) {
+                // Key is D2D3 string. Values are [New D2, New D3]
                 const swapMap = {
-                    '30':[1,3],'13':[3,0],'40':[1,4],'14':[4,0],'50':[1,5],'15':[5,0],
-                    '60':[1,6],'16':[6,0],'70':[1,7],'17':[7,0],'80':[1,8],'18':[8,0],
-                    '90':[1,9],'19':[9,0]
+                    '30': [1, 3], '13': [3, 0],
+                    '40': [1, 4], '14': [4, 0],
+                    '50': [1, 5], '15': [5, 0],
+                    '60': [1, 6], '16': [6, 0],
+                    '70': [1, 7], '17': [7, 0],
+                    '80': [1, 8], '18': [8, 0],
+                    '90': [1, 9], '19': [9, 0],
                 };
+
                 const key = String(d2) + String(d3);
-                if (swapMap[key]) return { newD2: swapMap[key][0], newD3: swapMap[key][1] };
-                return null;
+                if (swapMap[key]) {
+                    return { newD2: swapMap[key][0], newD3: swapMap[key][1] };
+                }
+                return null; 
             },
 
-            handleInitialPasscode(transcript) {
-                const MAX_WORD_DISTANCE_FROM_D4 = 6;
-                let d4 = 0;
-                const numbersWithIndex = [];
-                const rawWords = transcript.split(/\s+/).map(w => w.trim()).filter(w => w.length > 0);
-                let triggerIndex = -1;
 
-                for (let i = 0; i < rawWords.length; i++) {
-                    const w = rawWords[i];
+            // --- Handlers ---
+            
+            handleInitialPasscode(transcript) {
+                let d4 = 0;
+                let numbers = [];
+                // Clean up punctuation and split words
+                const rawWords = transcript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
+                
+                for (const w of rawWords) {
                     const cleanWord = w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").toUpperCase();
+                    
+                    // 1. Check D4 Trigger (use the clean word)
                     const triggerValue = this.D4_TRIGGERS[cleanWord];
-                    if (triggerValue) { d4 = triggerValue; triggerIndex = i; }
-                    if (cleanWord === 'DUAL') { numbersWithIndex.push({ idx: i, val: 1 }); numbersWithIndex.push({ idx: i, val: 2 }); continue; }
-                    if (cleanWord === 'DOT' || cleanWord === 'POINT') { numbersWithIndex.push({ idx: i, val: 1 }); continue; }
+                    if (triggerValue) { d4 = triggerValue; }
+                    
+                    // --- DUAL CHECK (D2=1, D3=2) ---
+                    if (cleanWord === 'DUAL') {
+                        numbers.push(1);
+                        numbers.push(2);
+                        continue;
+                    }
+                    // --- END DUAL CHECK ---
+
+                    // 2. Check for number words (use the clean word)
+                    if (cleanWord === 'DOT' || cleanWord === 'POINT') {
+                        numbers.push(1);
+                        continue;
+                    }
                     const spelled = this.NUMBER_WORDS[cleanWord];
-                    if (spelled !== undefined) { numbersWithIndex.push({ idx: i, val: spelled }); continue; }
+                    if (spelled !== undefined) { 
+                        numbers.push(spelled);
+                        continue;
+                    } 
+                    
+                    // 3. Check for raw digits or floating point numbers (use the raw word)
                     if (/^\d+(\.\d+)?$/.test(w)) {
                         for (const char of w) {
-                            if (char === '.') { numbersWithIndex.push({ idx: i, val: 1 }); }
-                            else {
-                                const digit = parseInt(char,10);
-                                if (!Number.isNaN(digit) && digit >= 0 && digit <= 9) numbersWithIndex.push({ idx: i, val: digit });
+                            if (char === '.') {
+                                numbers.push(1); 
+                            } else {
+                                const digit = parseInt(char, 10);
+                                if (digit >= 0 && digit <= 9) { 
+                                    numbers.push(digit);
+                                }
                             }
                         }
                         continue;
                     }
                 }
+                
+                this.logStatus(`DEBUG: Numbers Parsed: [${numbers.join(', ')}] (Length: ${numbers.length}), D4 Trigger Value: ${d4}`);
 
-                this.logStatus(`DEBUG: NumbersWithIndex Parsed: [${numbersWithIndex.map(n => n.val + '@' + n.idx).join(', ')}], TriggerIndex: ${triggerIndex}, D4: ${d4}`);
+                let d1, d2, d3;
 
-                if (d4 === 0) { this.logStatus(`PASSCODE FAILURE: Missing D4 Trigger Word.`, true); this.updateNotification('INITIAL'); return; }
-
-                let filteredNumbers = [];
-                if (triggerIndex >= 0) {
-                    filteredNumbers = numbersWithIndex.filter(n => Math.abs(n.idx - triggerIndex) <= MAX_WORD_DISTANCE_FROM_D4).map(n => n.val);
-                } else {
-                    filteredNumbers = numbersWithIndex.map(n => n.val);
+                // --- CRITICAL FAILURE CHECKS AND D1, D2, D3 ASSIGNMENT ---
+                if (d4 === 0) {
+                    this.logStatus(`PASSCODE FAILURE: Missing D4 Trigger Word.`, true);
+                    this.updateNotification('INITIAL'); 
+                    return;
                 }
-
-                this.logStatus(`Filtered numbers (within ${MAX_WORD_DISTANCE_FROM_D4} words of trigger): [${filteredNumbers.join(', ')}]`);
-
-                let d1,d2,d3;
-                if (filteredNumbers.length > 3) {
-                    d1 = filteredNumbers[0];
-                    d2 = filteredNumbers[filteredNumbers.length - 2];
-                    d3 = filteredNumbers[filteredNumbers.length - 1];
-                    this.logStatus(`OVERRIDE: Using filtered numbers. D1=${d1}, D2=${d2}, D3=${d3}`);
-                } else if (filteredNumbers.length === 3) {
-                    [d1,d2,d3] = filteredNumbers;
-                    this.logStatus("Parsed 3 filtered digits (D1, D2, D3).", false);
-                } else if (filteredNumbers.length === 2) {
+                
+                if (numbers.length > 3) {
+                    if (numbers.length >= 3) { 
+                        d1 = numbers[0]; 
+                        d2 = numbers[numbers.length - 2];
+                        d3 = numbers[numbers.length - 1];
+                        this.logStatus(`OVERRIDE: Parsed ${numbers.length} digits. Forced D1=${d1}, D2=${d2}, D3=${d3}`);
+                    } else {
+                         this.logStatus(`PASSCODE FAILURE: Too many digits but somehow less than 3.`, true);
+                         this.updateNotification('INITIAL'); 
+                         return; 
+                    }
+                } else if (numbers.length === 3) {
+                    // Standard case: D1, D2, D3 provided explicitly
+                    [d1, d2, d3] = numbers;
+                    this.logStatus("Parsed 3 digits (D1, D2, D3).", false);
+                } else if (numbers.length === 2) {
+                    // D1 is missing, so D1 defaults to 0 (meaning 10 letters)
                     d1 = 0;
-                    [d2,d3] = filteredNumbers;
-                    this.logStatus("Parsed 2 filtered digits (D2, D3). D1 defaults to 0 (Length 10).", false);
+                    [d2, d3] = numbers;
+                    this.logStatus("Parsed 2 digits (D2, D3). D1 defaults to 0 (Length 10).", false);
                 } else {
-                    this.logStatus(`PASSCODE FAILURE: Not enough numeric tokens within ${MAX_WORD_DISTANCE_FROM_D4} of trigger. Found ${filteredNumbers.length}.`, true);
-                    this.updateNotification('INITIAL'); return;
+                    // Hard failure for 0 or 1 digits
+                    this.logStatus(`PASSCODE FAILURE: Failed to parse required 2 or 3 digits. Found only ${numbers.length}.`, true);
+                    this.updateNotification('INITIAL'); 
+                    return; 
+                }
+                // --- END CRITICAL FAILURE CHECKS ---
+
+                const originalD1 = d1;
+                const originalD2 = d2;
+                const originalD3 = d3;
+                const originalD4 = d4;
+
+                // CRITICAL CHANGE 1: Store the full passcode immediately
+                this.FULL_PASSCODE = `${originalD1}${originalD2}${originalD3}${originalD4}`;
+                this.APPLIED_LETTERS = ''; // Reset applied letters for a new code
+
+
+                this.logStatus(`PASSCODE PARSED: D1=${originalD1}${originalD2}${originalD3}${originalD4}. (Length: ${originalD1 === 0 ? '10' : originalD1 + ' or ' + (originalD1 + 10)}), D2=${originalD2}, D3=${originalD3}, D4=${originalD4}`);
+
+                if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
+                    this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); 
+                    this.resetApp(true);
+                    return; 
                 }
 
-                const originalD1 = d1, originalD2 = d2, originalD3 = d3, originalD4 = d4;
-                this.FULL_PASSCODE = `${originalD1}${originalD2}${originalD3}${originalD4}`;
-                this.APPLIED_LETTERS = '';
-                this.logStatus(`PASSCODE PARSED: D1=${originalD1}${originalD2}${originalD3}${originalD4}. D2=${originalD2}, D3=${originalD3}, D4=${originalD4}`);
-
-                if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); this.resetApp(true); return; }
-
+                // Initial filter attempt
                 let matches = this.filterDictionary(originalD1, originalD2, originalD3, originalD4, LARGE_DICTIONARY);
 
                 if (matches.length === 0) {
+                    // --- START D2/D3 SWAP LOGIC (Change 3) ---
                     const swapResult = this.getSwappedD2D3(originalD2, originalD3);
+                    
                     if (swapResult) {
                         const { newD2, newD3 } = swapResult;
                         this.logStatus(`0 matches found for ${originalD2}${originalD3}. Attempting swap to ${newD2}${newD3}.`);
+
+                        // Re-run filter with swapped D2/D3
                         const swappedMatches = this.filterDictionary(originalD1, newD2, newD3, originalD4, LARGE_DICTIONARY);
-                        if (swappedMatches.length > 0) { this.logStatus(`SUCCESS: Found ${swappedMatches.length} matches with swapped code. Using these matches.`); matches = swappedMatches; }
-                        else this.logStatus("Swap failed (0 matches). Proceeding to NO_MATCHES notification.");
-                    } else this.logStatus("Swap condition not met. Proceeding to NO_MATCHES notification.");
+
+                        if (swappedMatches.length > 0) {
+                            this.logStatus(`SUCCESS: Found ${swappedMatches.length} matches with swapped code. Using these matches.`);
+                            matches = swappedMatches; 
+                        } else {
+                             this.logStatus("Swap failed (0 matches). Proceeding to NO_MATCHES notification.");
+                        }
+                    } else {
+                        this.logStatus("Swap condition not met. Proceeding to NO_MATCHES notification.");
+                    }
+                    // --- END D2/D3 SWAP LOGIC ---
                 }
 
-                if (matches.length === 0) { this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listener."); this.updateNotification('NO_MATCHES'); return; }
 
-                this.HISTORY = [];
+                if (matches.length === 0) {
+                    // SCENARIO 2: FILTERING FAILED (0 matches). 
+                    this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listener.");
+                    this.updateNotification('NO_MATCHES'); 
+                    return; 
+                }
+                
+                this.HISTORY = []; 
                 this.HISTORY.push(matches);
                 this.MATCHES = matches;
+
                 this.logStatus(`Code: ${this.FULL_PASSCODE}. Filtered Matches: ${matches.length}`);
+                
                 this.checkMatchesAndProceed();
             },
-
+            
             handleLetterInput(transcript) {
-                if (this.MATCHES.length <= 1) { this.logStatus("Ignoring letter input, solution already found."); return; }
-
+                if (this.MATCHES.length <= 1) {
+                    this.logStatus("Ignoring letter input, solution already found.");
+                    return; 
+                }
+                
                 let magicLetter = null;
                 const upperTranscript = transcript.toUpperCase();
-
+                
+                // -----------------------------------------------------------
+                // 1. PRIMARY LOGIC CHECK: CONSECUTIVE WORD REPETITION (PRIORITY 1)
+                // -----------------------------------------------------------
+                
                 const cleanTranscript = upperTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
                 const words = cleanTranscript.split(/\s+/).filter(w => w.length > 0);
 
@@ -680,196 +955,292 @@
                     if (words[i] === words[i+1]) {
                         magicLetter = words[i][0].toUpperCase();
                         this.logStatus(`PRIMARY TRIGGER (Repetition) activated by '${words[i]} ${words[i+1]}'. Magic Letter: ${magicLetter}`);
-                        break;
+                        break; 
                     }
                 }
 
+                // -----------------------------------------------------------
+                // 2. SECONDARY LOGIC CHECK: 'INTERESTING' TRIGGER (PRIORITY 2)
+                // -----------------------------------------------------------
+                
                 if (!magicLetter) {
                     const trigger = "INTERESTING";
                     const triggerIndex = upperTranscript.indexOf(trigger);
+                    
                     if (triggerIndex === -1) {
                         this.logStatus("No Primary trigger, and no 'interesting' trigger. Ignoring input.");
-                        return;
+                        return; 
                     }
+                    
                     const preTriggerArea = upperTranscript.substring(0, triggerIndex).trim();
-                    const preWords = preTriggerArea.split(/\s+/).filter(w => w.length > 0);
-                    if (preWords.length === 0) { this.logStatus("Secondary trigger found, but no word precedes 'interesting'. Ignoring input."); return; }
+                    const preWords = preTriggerArea.split(/\s+/).filter(w => w.length > 0); 
+                    
+                    if (preWords.length === 0) {
+                        this.logStatus("Secondary trigger found, but no word precedes 'interesting'. Ignoring input.");
+                        return; 
+                    }
+                    
                     const spokenWord = preWords[preWords.length - 1];
                     magicLetter = spokenWord[0].toUpperCase();
                     this.logStatus(`SECONDARY TRIGGER ('interesting') activated by preceding word '${spokenWord}'. Magic Letter: ${magicLetter}`);
                 }
+                
+                // -----------------------------------------------------------
+                // 3. APPLY FILTER (Proceeds only if magicLetter is found)
+                // -----------------------------------------------------------
 
-                if (!magicLetter) return;
+                if (!magicLetter) {
+                    return; 
+                }
+                
+                const pos = this.CURRENT_POSITION_INDEX - 1; 
 
-                const pos = this.CURRENT_POSITION_INDEX - 1;
-                const filtered = this.MATCHES.filter(word => word.length > pos && word[pos] === magicLetter);
+                const filtered = this.MATCHES.filter(word => 
+                    word.length > pos && word[pos] === magicLetter
+                );
 
                 if (filtered.length === 0) {
+                    // Letter filter failed - Revert to previous list and keep listening
                     this.logStatus(`Filter failed: Letter '${magicLetter}' yielded 0 matches. Staying on current list.`);
-                    this.updateNotification('WORD_LIST'); return;
+                    this.updateNotification('WORD_LIST'); 
+                    return; 
                 }
-
+                
                 this.APPLIED_LETTERS += magicLetter;
+
                 this.HISTORY.push(filtered);
                 this.MATCHES = filtered;
                 this.logStatus(`Filtered by letter '${magicLetter}' at position ${this.CURRENT_POSITION_INDEX}. ${filtered.length} matches remain.`);
+
                 this.checkMatchesAndProceed();
             },
+
+            // --- State and UI Update ---
 
             updateNotification(status) {
                 const notifIcon = document.getElementById('notif-icon');
                 const notifText = document.getElementById('notif-text');
                 const currentSecond = document.getElementById('current-second');
                 const widget = document.getElementById('transcript-widget');
-
+                
                 if (status === 'FINAL') {
-                    this.stopListening();
-                    this.clearState();
-                    notifIcon.innerHTML = this.ICON_CHAT_SVG;
+                    // Final state - Permanent Stop
+                    this.stopListening(); 
+                    this.clearState(); // Clear session state on final success
+                    notifIcon.innerHTML = this.ICON_CHAT_SVG; 
+                    
                     const finalWord = this.MATCHES[0];
-                    const fullCodePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS;
-                    notifText.innerHTML = `<span class="final-word-placeholder">${fullCodePrefix}</span> Sohan needs ${finalWord.toLowerCase()} to...`;
+                    const fullCodePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS; 
+                    
+                    notifText.innerHTML = `<span class="final-word-placeholder">${fullCodePrefix}</span> Sohan needs ${finalWord.toLowerCase()} to...`; 
                     currentSecond.textContent = '00';
+                    
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
+                    // SUCCESS PATH: Display word list 
                     this.APP_STATE = 'AOD_LISTENING';
+                    
                     const displayWordsPreview = this.getDistinctWordPreview(this.MATCHES);
-                    notifIcon.innerHTML = this.ICON_CHAT_SVG;
+                    
+                    notifIcon.innerHTML = this.ICON_CHAT_SVG; 
+                    
                     const codePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS;
                     notifText.innerHTML = `To buy <span class="final-word-placeholder">${codePrefix}</span> ${displayWordsPreview}`;
-                    currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2,'0');
-                    this.updateListeningUI(true);
-                    this.saveState();
+                    
+                    currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
+                    this.updateListeningUI(true); 
+                    this.saveState(); 
+
                 } else if (status === 'NO_MATCHES') {
-                    this.APP_STATE = 'AOD_LISTENING';
+                    // SCENARIO 2 PATH: Valid code, 0 matches. Keeps listening for a new code.
+                    this.APP_STATE = 'AOD_LISTENING'; 
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
-                    notifText.innerHTML = `<span class="final-word-placeholder">${this.FULL_PASSCODE}</span> Update not available`;
+                    // CRITICAL CHANGE 1: Display the full code on failure
+                    notifText.innerHTML = `<span class="final-word-placeholder">${this.FULL_PASSCODE}</span> Update not available`; 
                     currentSecond.textContent = '00';
-                    if (widget) { widget.textContent += '\n\n>>> CODE FAILED (0 matches). Listening for new code...'; widget.scrollTop = widget.scrollHeight; }
-                    this.updateListeningUI(true);
+                    
+                    // Add debug message to transcript widget 
+                    if (widget) {
+                        widget.textContent += '\n\n>>> CODE FAILED (0 matches). Listening for new code...';
+                        widget.scrollTop = widget.scrollHeight; 
+                    }
+
+                    this.updateListeningUI(true); 
+
                 } else if (status === 'INITIAL') {
+                    // DEFAULT PATH/SILENT RECOVERY: Displays default text.
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
-                    notifText.textContent = "System Update Available";
+                    notifText.textContent = "System Update Available"; 
                     currentSecond.textContent = '00';
-                    this.clearState();
-                    if (!this.isListening) { this.APP_STATE = 'AOD_LOCK'; this.updateListeningUI(false); }
-                    else { this.APP_STATE = 'AOD_LISTENING'; this.updateListeningUI(true); }
+                    this.clearState(); // Clears all state variables
+                    
+                    if (!this.isListening) {
+                        this.APP_STATE = 'AOD_LOCK';
+                        this.updateListeningUI(false); 
+                    } else {
+                        this.APP_STATE = 'AOD_LISTENING'; 
+                        this.updateListeningUI(true);
+                    }
                 }
             },
 
             checkMatchesAndProceed() {
                 if (this.MATCHES.length === 1) {
+                    // Final word found
                     this.APP_STATE = 'AOD_DISPLAY_FINAL';
-                    this.updateNotification('FINAL');
+                    this.updateNotification('FINAL'); 
+                    
                 } else if (this.MATCHES.length > 1) {
+                    // Need more filtering
                     const bestIndex = this.getDisambiguationIndex(this.MATCHES);
+
                     if (bestIndex === 0) {
                         this.logStatus(`Ambiguous State: ${this.MATCHES.length} matches. Cannot find suitable disambiguation index.`);
-                        this.CURRENT_POSITION_INDEX = 0;
-                    } else this.CURRENT_POSITION_INDEX = bestIndex;
-                    document.getElementById('current-second').textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2,'0');
-                    this.updateNotification('WORD_LIST');
+                        this.CURRENT_POSITION_INDEX = 0; 
+                    } else {
+                        this.CURRENT_POSITION_INDEX = bestIndex;
+                    }
+                    
+                    document.getElementById('current-second').textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
+                    
+                    this.updateNotification('WORD_LIST'); 
+                    
                 } else {
                     this.logStatus("Error state: Matches list is empty. Hard resetting.");
                     this.resetApp(true);
                 }
             },
-
+            
             resetApp(returnToLock = true) {
                 if (this.isListening) {
                     try { if (this.recognizer) this.recognizer.abort(); } catch(e){}
                 }
+                
                 this.MATCHES = [];
                 this.HISTORY = [];
                 this.CURRENT_POSITION_INDEX = 0;
-                this.FULL_PASSCODE = '';
-                this.APPLIED_LETTERS = '';
+                this.FULL_PASSCODE = '';        
+                this.APPLIED_LETTERS = '';      
                 document.getElementById('current-second').textContent = '00';
-                document.getElementById('transcript-widget').textContent = "Ready. Double-tap blank area to hide/show.";
-                this._prevFinalTail = '';
-                // Reset dedupe trackers too
-                this._lastProcessedResultIndex = -1;
-                this._lastFinalProcessed = '';
-                this._lastWidgetLineIsInterim = false;
+                
+                // Reset the transcript widget content
+                document.getElementById('transcript-widget').textContent = "Ready. Double-tap blank area to hide/show."; 
 
                 if (returnToLock) {
                     this.updateNotification('INITIAL');
                     this.logStatus("App reset to AOD_LOCK state.");
                     this.clearState();
+                    
                     this.APP_STATE = 'AOD_LOCK';
-                    this.updateListeningUI(false);
+                    this.updateListeningUI(false); 
                 } else {
-                    this.updateNotification('INITIAL');
-                    this.APP_STATE = 'AOD_LISTENING';
+                    this.updateNotification('INITIAL'); 
+                    this.APP_STATE = 'AOD_LISTENING'; 
                     this.logStatus("App state cleared, ready for new voice input.");
                 }
             },
-
+            
             logStatus(message, isError = false) {
                 const prefix = isError ? "ERROR: " : "INFO: ";
-                console.log(prefix + message);
+                console.log(prefix + message); 
             },
 
+            // --- Service Worker Registration (Loads sw.js) ---
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        navigator.serviceWorker.register('./sw.js', { scope: './' })
-                            .then(reg => { this.logStatus('Service Worker (SW) registration successful.'); })
+                        navigator.serviceWorker.register('./sw.js', { scope: './' }) 
+                            .then(reg => {
+                                this.logStatus('Service Worker (SW) registration successful.');
+                            })
                             .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}.`, true));
                     });
                 }
+                // Placeholder functions for PWA assets as they are external files
                 if (typeof __createFile === 'function') {
                     __createFile("./manifest.json", "{}");
                     __createFile("./sw.js", "/* Service Worker Content */");
                 }
             },
 
+            // --- Initialization ---
             init() {
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) {
                     this.logStatus("WARNING: Dictionary (LARGE_DICTIONARY) not yet loaded.", true);
                     document.getElementById('notif-text').textContent = "WAITING FOR DICT...";
                 } else {
-                    this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
+                     this.logStatus(`App ready. Dictionary size: ${LARGE_DICTIONARY.length}. Tap clock to start.`);
                 }
-
+                
                 this.initVoiceRecognition();
                 this.updateTime();
-                setInterval(() => this.updateTime(), 1000);
-
+                setInterval(() => this.updateTime(), 1000);   
+                
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
-
+                const systemNotification = document.getElementById('system-notification'); 
+                
+                // 1. VOICE INPUT HANDLERS
+                
+                // Robust Mobile Touch Handling for Single/Double Tap
                 let lastTap = 0;
-                const doubleTapThreshold = 300;
+                const doubleTapThreshold = 300; // ms
 
                 clockContainer.addEventListener('touchend', function(e) {
-                    e.preventDefault();
+                    e.preventDefault(); 
                     const now = Date.now();
+                    
+                    // Check for double tap
                     if (now - lastTap < doubleTapThreshold) {
+                        // Double Tap (Master Reset)
                         APP.handleDoubleTap(e);
-                        lastTap = 0;
+                        lastTap = 0; // Reset last tap time after successful double tap
                     } else {
-                        APP.handleSingleTap(e);
+                        // Single Tap (Mic Restart AND Notification Toggle)
+                        APP.handleSingleTap(e); 
                     }
                     lastTap = now;
                 });
 
+                // Click fallback for desktop/non-touch environments
                 clockContainer.addEventListener('click', (e) => {
-                    if (Date.now() - lastTap > doubleTapThreshold * 2) APP.handleSingleTap(e);
+                    // Only run click if it wasn't part of a recent touch event (to prevent double handling)
+                    if (Date.now() - lastTap > doubleTapThreshold * 2) { 
+                        APP.handleSingleTap(e);
+                    }
                 });
-
+                
+                // Double tap on app body (outside clock/player) to toggle transcript widget
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
-
+                
+                // CRITICAL REMOVAL: Removed the single tap listener from the notification widget.
+                // It is now handled by the clock-container's handleSingleTap.
+                
+                // --- MIC AUTORESTART ON FOCUS (NEW FEATURE) ---
                 window.addEventListener('focus', () => {
                     this.logStatus("Window gained focus. Attempting to restart listening...");
-                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') this.startListening();
+                    if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
+                        this.startListening();
+                    }
                 });
-                window.addEventListener('blur', () => { this.logStatus("Window lost focus/minimized."); });
 
+                window.addEventListener('blur', () => {
+                    this.logStatus("Window lost focus/minimized.");
+                });
+                // --- END MIC AUTORESTART ---
+                
+                // Attempt to load and resume state
                 const resumed = this.loadState();
-                if (!resumed) this.updateNotification('INITIAL');
 
-                if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') this.startListening();
-                this.registerServiceWorker();
+                if (!resumed) {
+                    this.updateNotification('INITIAL');
+                }
+                
+                // Start listening initially to ensure mic is active if permissions are granted.
+                if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
+                    this.startListening();
+                }
+
+                this.registerServiceWorker(); // PWA registration is here
             }
         };
 
