@@ -282,10 +282,10 @@
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
-            // MINIMAL RESTART DELAY: decreased so restarts are near-instant
-            RESTART_DELAY_MS: 50, 
-            // Watchdog interval (ms) used to detect stalls — run more frequently
-            RECOGNIZER_WATCHDOG_MS: 1500,
+            // MINIMAL RESTART DELAY: increased to 300ms for gentler restarts
+            RESTART_DELAY_MS: 300, 
+            // Watchdog interval (ms) used to detect stalls
+            RECOGNIZER_WATCHDOG_MS: 3000,
             SESSION_KEY: 'aod_magic_state',
             
             // State Variables
@@ -300,7 +300,6 @@
 
             // Stitch/interim helper
             _lastInterim: '',
-            _lastWidgetInterim: '',    // <-- NEW: the last interim line currently shown in transcript widget
             _watchdogTimer: null,
             _lastResultAt: 0,
             _restartAttempts: 0,
@@ -481,7 +480,7 @@
                     this.isListening = true;
                 };
 
-                // ----------------- onresult (improved stitching and widget handling) -----------------
+                // ----------------- onresult (fixed transcript UI / no duplicate lines) -----------------
                 this.recognizer.onresult = (event) => {
                     // Update last result time for watchdog
                     this._lastResultAt = Date.now();
@@ -500,50 +499,49 @@
                         finalText = (this._lastInterim + ' ' + finalText).trim();
                         this._lastInterim = '';
                     } else {
+                        // keep the interim to show live text and for later stitching
                         this._lastInterim = interim.trim();
                     }
 
+                    // ---- Transcript widget update: avoid duplicates ----
                     const widget = document.getElementById('transcript-widget');
+                    if (widget) {
+                        const isInitialText = widget.textContent.includes("Ready. Double-tap");
+                        // initialize internal flag if absent
+                        if (typeof widget._lastWasInterim === 'undefined') widget._lastWasInterim = false;
 
-                    // ---------- Improved transcript display ----------
-                    // Behavior:
-                    // - When a FINAL arrives: append final as a new line, and clear any interim marker.
-                    // - When an INTERIM arrives: show or replace the last interim line (do not append repeatedly).
-                    // This prevents duplication like "monkey / monkey".
-                    try {
-                        if (widget) {
-                            const isInitialText = widget.textContent.includes("Ready. Double-tap");
-                            // If final exists, append it as a stable new line
-                            if (finalText.trim().length > 0) {
-                                const lineToAdd = finalText.trim();
-                                if (isInitialText) widget.textContent = lineToAdd;
-                                else widget.textContent = widget.textContent + '\n' + lineToAdd;
-                                // After final, clear any visible interim tracker
-                                this._lastWidgetInterim = '';
+                        if (finalText.trim().length > 0) {
+                            // Append final results as a new line (do NOT also append interim)
+                            if (isInitialText) {
+                                widget.textContent = finalText.trim();
+                            } else {
+                                widget.textContent = widget.textContent + '\n' + finalText.trim();
                             }
-
-                            // Show interim by replacing previous interim line (if any), otherwise append a new interim line
-                            const interimTrim = interim.trim();
-                            if (interimTrim.length > 0) {
-                                if (this._lastWidgetInterim && widget.textContent.endsWith('\n' + this._lastWidgetInterim)) {
-                                    // Replace the trailing interim line
-                                    widget.textContent = widget.textContent.slice(0, -this._lastWidgetInterim.length) + interimTrim;
+                            widget._lastWasInterim = false;
+                        } else if (interim.trim().length > 0) {
+                            // Show interim by replacing the last line if the last line was interim
+                            if (isInitialText) {
+                                widget.textContent = interim.trim();
+                            } else {
+                                if (widget._lastWasInterim) {
+                                    // replace the last line with new interim text
+                                    const lines = widget.textContent.split('\n');
+                                    lines[lines.length - 1] = interim.trim();
+                                    widget.textContent = lines.join('\n');
                                 } else {
-                                    // Append interim as a new trailing line
-                                    if (widget.textContent.length === 0) widget.textContent = interimTrim;
-                                    else widget.textContent = widget.textContent + '\n' + interimTrim;
+                                    // append interim as a new "live" line
+                                    widget.textContent = widget.textContent + '\n' + interim.trim();
                                 }
-                                this._lastWidgetInterim = interimTrim;
                             }
-                            widget.scrollTop = widget.scrollHeight;
+                            widget._lastWasInterim = true;
                         }
-                    } catch (e) {
-                        // fail silently for widget rendering
+                        widget.scrollTop = widget.scrollHeight;
                     }
-                    // ---------- end transcript display ----------
 
-                    if ((finalText + ' ' + interim).trim().length > 0) {
-                        this.logStatus(`RAW Transcript received: "${(finalText + ' ' + interim).trim()}"`); 
+                    // Log what we got (keeps your existing debugging)
+                    const rawTranscript = (finalText + ' ' + interim).trim();
+                    if (rawTranscript.length > 0) {
+                        this.logStatus(`RAW Transcript received: "${rawTranscript}"`); 
                     }
 
                     // IMPORTANT: do NOT abort the recognizer here — keep it running to avoid losing audio
@@ -551,100 +549,35 @@
                     if (finalText.trim().length > 0) {
                         const upperTranscript = finalText.trim().toUpperCase();
 
-                        // ----------------- onresult cross-boundary and processing (original logic) -----------------
-                        // CROSS-BOUNDARY CHECK (expanded)
-                        try {
-                            const prevTailRaw = (this._prevFinalTail || '').trim();
-                            const prevTail = prevTailRaw.replace(/[^\w']/g,'').toUpperCase();
-                            const thisFirstRaw = (upperTranscript.split(/\s+/)[0] || '').trim();
-                            const thisFirst = thisFirstRaw.replace(/[^\w']/g,'').toUpperCase();
-
-                            if (prevTail.length > 0 && thisFirst.length > 0) {
-                                if (prevTail === thisFirst) {
-                                    this.logStatus(`Cross-boundary repetition detected: "${prevTail} ${thisFirst}"`);
-                                    const fakeRepetition = (thisFirst + ' ' + thisFirst).toUpperCase();
-                                    if (this.MATCHES.length === 0) {
-                                        this.handleInitialPasscode(fakeRepetition);
-                                    } else {
-                                        this.handleLetterInput(fakeRepetition);
-                                    }
-                                } else if (thisFirst === 'INTERESTING') {
-                                    this.logStatus(`Cross-boundary 'interesting' predecessor detected: "${prevTail} INTERESTING"`);
-                                    const combined = (prevTail + ' INTERESTING').toUpperCase();
-                                    if (this.MATCHES.length === 0) {
-                                        this.handleInitialPasscode(combined);
-                                    } else {
-                                        this.handleLetterInput(combined);
-                                    }
-                                } else {
-                                    const isPrevDigits = /^[0-9]+$/.test(prevTail);
-                                    const isPrevNumberWord = (this.NUMBER_WORDS && this.NUMBER_WORDS[prevTail] !== undefined);
-
-                                    if ((isPrevDigits || isPrevNumberWord) && this.D4_TRIGGERS[thisFirst]) {
-                                        this.logStatus(`Cross-boundary number + trigger detected: "${prevTail} ${thisFirst}"`);
-                                        const combinedNumTrigger = (prevTail + ' ' + thisFirst).toUpperCase();
-                                        this.handleInitialPasscode(combinedNumTrigger);
-                                    } else {
-                                        const combinedBoundary = (prevTail + ' ' + thisFirst).trim().toUpperCase();
-                                        if (this.hasTriggerWord(combinedBoundary)) {
-                                            this.logStatus(`Cross-boundary candidate detected: "${combinedBoundary}" — processing.`);
-                                            if (this.MATCHES.length === 0) {
-                                                this.handleInitialPasscode(combinedBoundary);
-                                            } else {
-                                                this.handleLetterInput(combinedBoundary);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            this.logStatus("Cross-boundary check failed: " + e.message, true);
-                        }
-
                         if (this.MATCHES.length === 0) {
                             this.handleInitialPasscode(upperTranscript);
                         } else {
                             this.handleLetterInput(upperTranscript);
                         }
-
-                        // Update prevFinalTail to the last word of this final (used for next boundary)
-                        try {
-                            const words = upperTranscript.split(/\s+/).filter(Boolean);
-                            this._prevFinalTail = words.length > 0 ? words[words.length - 1].replace(/[^\w']/g,'') : '';
-                        } catch (e) {
-                            this._prevFinalTail = '';
-                        }
                     }
                 };
 
-                // ----------------- onend with near-instant restart -----------------
+                // ----------------- onend with gentle backoff restart -----------------
                 this.recognizer.onend = () => {
-                    this.isListening = false;
+                    this.isListening = false; 
 
-                    // If we're in final display state, don't restart
                     if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
                         this.logStatus("Listening ended. Remaining in AOD_DISPLAY_FINAL state.");
                         this.updateListeningUI(false);
                         return;
                     }
 
-                    // Reset restart attempts so we don't inflate backoff unnecessarily
-                    this._restartAttempts = 0;
-
-                    // Very short restart: try immediately, with a tiny setTimeout to avoid re-entrancy issues
-                    const safeBackoff = Math.max(this.RESTART_DELAY_MS || 50, 50);
-                    this.logStatus(`Listening session ended. Immediate restart scheduled in ${safeBackoff}ms.`);
+                    // Adaptive backoff restart strategy
+                    this._restartAttempts++;
+                    const backoff = Math.min(200 + (this._restartAttempts * 200), this._MAX_RESTART_BACKOFF_MS);
+                    const safeBackoff = Math.max(this.RESTART_DELAY_MS || 300, backoff);
+                    this.logStatus(`Listening session ended. Scheduling restart #${this._restartAttempts} in ${safeBackoff}ms.`);
                     setTimeout(() => {
-                        // Only restart if still allowed by state
                         if (this.APP_STATE !== 'AOD_DISPLAY_FINAL' && this.APP_STATE !== 'AOD_LOCK') {
                             try {
-                                // Prefer start(); if recognizer is in an invalid state, catch will handle it
                                 this.startListening();
                             } catch (err) {
                                 this.logStatus("Restart startListening error: " + err.message, true);
-                                // As a fallback, try abort then start quickly
-                                try { this.recognizer.abort(); } catch(e){}
-                                setTimeout(() => { try { this.startListening(); } catch(e){ this.logStatus("Fallback restart failed: "+e.message,true);} }, 60);
                             }
                         }
                     }, safeBackoff);
@@ -666,7 +599,7 @@
                     this._watchdogTimer = setInterval(() => {
                         if (!this.recognizer) return;
                         const now = Date.now();
-                        // If we haven't seen any result in the last ~9 seconds, restart to recover
+                        // If we haven't seen any result in the last ~18 seconds, restart to recover
                         if (this.isListening && (now - this._lastResultAt) > (this.RECOGNIZER_WATCHDOG_MS * 6)) {
                             this.logStatus("Watchdog detected long silence. Restarting recognizer to recover.");
                             try {
