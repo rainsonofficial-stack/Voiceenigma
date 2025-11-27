@@ -94,6 +94,8 @@ const LARGE_DICTIONARY = [
   "bubbles",
   "bucket",
   "bulb",
+  "bullet",
+  "bulletproofvest",
   "burger",
   "bus",
   "butterfly",
