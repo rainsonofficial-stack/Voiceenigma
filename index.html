@@ -284,6 +284,8 @@
             MATCHES: [], 
             HISTORY: [], 
             CURRENT_POSITION_INDEX: 0, 
+            FULL_PASSCODE: '',          // NEW: Stores the 4-digit D1D2D3D4 code
+            APPLIED_LETTERS: '',        // NEW: Stores the sequence of applied letters
             recognizer: null,
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
@@ -334,7 +336,9 @@
                         matches: this.MATCHES,
                         history: this.HISTORY,
                         position: this.CURRENT_POSITION_INDEX,
-                        state: this.APP_STATE
+                        state: this.APP_STATE,
+                        fullPasscode: this.FULL_PASSCODE,        // Store new state
+                        appliedLetters: this.APPLIED_LETTERS     // Store new state
                     };
                     sessionStorage.setItem(this.SESSION_KEY, JSON.stringify(stateToSave));
                 } catch (e) {
@@ -351,6 +355,8 @@
                         this.HISTORY = state.history || [];
                         this.CURRENT_POSITION_INDEX = state.position || 0;
                         this.APP_STATE = state.state || 'AOD_LOCK';
+                        this.FULL_PASSCODE = state.fullPasscode || '';      // Load new state
+                        this.APPLIED_LETTERS = state.appliedLetters || '';  // Load new state
 
                         if (this.MATCHES.length > 0 && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                             this.logStatus("State loaded. Attempting to resume puzzle.");
@@ -753,12 +759,16 @@
                     this.updateNotification('NO_MATCHES'); 
                     return; 
                 }
+                
+                // NEW: Store the passcode
+                this.FULL_PASSCODE = `${d1}${d2}${d3}${d4}`;
+                this.APPLIED_LETTERS = ''; // Reset applied letters for a new code
 
                 this.HISTORY = []; 
                 this.HISTORY.push(matches);
                 this.MATCHES = matches;
 
-                this.logStatus(`Code: ${d1}${d2}${d3}${d4}. Filtered Matches: ${matches.length}`);
+                this.logStatus(`Code: ${this.FULL_PASSCODE}. Filtered Matches: ${matches.length}`);
                 
                 this.checkMatchesAndProceed();
             },
@@ -841,6 +851,9 @@
                     this.updateNotification('WORD_LIST'); 
                     return; 
                 }
+                
+                // NEW: Store the applied letter
+                this.APPLIED_LETTERS += magicLetter;
 
                 this.HISTORY.push(filtered);
                 this.MATCHES = filtered;
@@ -862,8 +875,12 @@
                     this.stopListening(); 
                     this.clearState(); // Clear session state on final success
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
+                    
                     const finalWord = this.MATCHES[0];
-                    notifText.innerHTML = `Sohan wants ${finalWord.toLowerCase()} to...`; 
+                    const fullCodePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS; // NEW
+                    
+                    // NEW: Display the full code prefix before the final message
+                    notifText.innerHTML = `<span class="final-word-placeholder">${fullCodePrefix}</span> Sohan needs ${finalWord.toLowerCase()} to...`; 
                     currentSecond.textContent = '00';
                     
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
@@ -872,7 +889,11 @@
                     const displayWords = this.MATCHES.map(w => w.toLowerCase()).join(', '); 
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
-                    notifText.innerHTML = `To buy: ${displayWords}`; 
+                    
+                    // NEW: Display the code and applied letters before the word list
+                    const codePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS;
+                    notifText.innerHTML = `To buy <span class="final-word-placeholder">${codePrefix}</span> ${displayWords}`;
+                    
                     currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     this.updateListeningUI(true); 
                     this.saveState(); 
@@ -897,7 +918,7 @@
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "System Update Available"; 
                     currentSecond.textContent = '00';
-                    this.clearState(); 
+                    this.clearState(); // Clears all state variables including NEW ones
                     
                     if (!this.isListening) {
                         this.APP_STATE = 'AOD_LOCK';
@@ -944,6 +965,8 @@
                 this.MATCHES = [];
                 this.HISTORY = [];
                 this.CURRENT_POSITION_INDEX = 0;
+                this.FULL_PASSCODE = '';        // Reset new state
+                this.APPLIED_LETTERS = '';      // Reset new state
                 document.getElementById('current-second').textContent = '00';
                 
                 // Reset the transcript widget content
@@ -979,6 +1002,11 @@
                             })
                             .catch(err => this.logStatus(`Service Worker registration failed: ${err.message}.`, true));
                     });
+                }
+                // Placeholder functions for PWA assets as they are external files
+                if (typeof __createFile === 'function') {
+                    __createFile("./manifest.json", "{}");
+                    __createFile("./sw.js", "/* Service Worker Content */");
                 }
             },
 
@@ -1067,3 +1095,4 @@
     </script>
 </body>
 </html>
+
