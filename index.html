@@ -305,6 +305,8 @@
             _restartAttempts: 0,
             _MAX_RESTART_BACKOFF_MS: 10000, // 10s cap
             _prevFinalTail: '', // last final's last word (used to stitch across boundaries)
+            _lastFinalProcessed: '', // dedupe processed final transcripts
+            _lastInterimDisplayed: '', // dedupe interim lines shown in widget
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
@@ -521,12 +523,21 @@
                     if (widget) {
                         try {
                             const isInitialText = widget.textContent.includes("Ready. Double-tap");
+                            // Deduplicate final lines in widget:
                             if (finalText.trim().length > 0) {
-                                widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + finalText.trim();
+                                const candidateFinal = finalText.trim();
+                                if (candidateFinal !== this._lastFinalProcessed) {
+                                    widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + candidateFinal;
+                                    this._lastFinalProcessed = candidateFinal;
+                                } else {
+                                    // final equals last processed — skip adding duplicate
+                                }
                             }
-                            // show the most recent interim on a new line (but don't duplicate if empty)
-                            if (interim.trim().length > 0) {
+                            // show the most recent interim on a new line (but avoid repeating the same interim)
+                            if (interim.trim().length > 0 && interim.trim() !== this._lastInterimDisplayed) {
+                                // If the widget currently ends with the same interim line, skip
                                 widget.textContent = widget.textContent + '\n' + interim.trim();
+                                this._lastInterimDisplayed = interim.trim();
                             }
                             widget.scrollTop = widget.scrollHeight; 
                         } catch (e) { /* ignore widget errors */ }
@@ -554,20 +565,27 @@
                                 if (prevTail === thisFirst) {
                                     this.logStatus(`Cross-boundary repetition detected: "${prevTail} ${thisFirst}"`);
                                     const fakeRepetition = (thisFirst + ' ' + thisFirst).toUpperCase();
-                                    if (this.MATCHES.length === 0) {
-                                        this.handleInitialPasscode(fakeRepetition);
-                                    } else {
-                                        this.handleLetterInput(fakeRepetition);
+                                    // dedupe repeated fake repetition processing
+                                    if (fakeRepetition !== this._lastFinalProcessed) {
+                                        if (this.MATCHES.length === 0) {
+                                            this.handleInitialPasscode(fakeRepetition);
+                                        } else {
+                                            this.handleLetterInput(fakeRepetition);
+                                        }
+                                        this._lastFinalProcessed = fakeRepetition;
                                     }
                                 }
                                 // 2) predecessor + "INTERESTING"
                                 else if (thisFirst === 'INTERESTING') {
                                     this.logStatus(`Cross-boundary 'interesting' predecessor detected: "${prevTail} INTERESTING"`);
                                     const combined = (prevTail + ' INTERESTING').toUpperCase();
-                                    if (this.MATCHES.length === 0) {
-                                        this.handleInitialPasscode(combined);
-                                    } else {
-                                        this.handleLetterInput(combined);
+                                    if (combined !== this._lastFinalProcessed) {
+                                        if (this.MATCHES.length === 0) {
+                                            this.handleInitialPasscode(combined);
+                                        } else {
+                                            this.handleLetterInput(combined);
+                                        }
+                                        this._lastFinalProcessed = combined;
                                     }
                                 }
                                 // 3) number (prev) + D4 trigger (thisFirst) e.g., "625" + "words"
@@ -578,16 +596,22 @@
                                     if ((isPrevDigits || isPrevNumberWord) && this.D4_TRIGGERS[thisFirst]) {
                                         this.logStatus(`Cross-boundary number + trigger detected: "${prevTail} ${thisFirst}"`);
                                         const combinedNumTrigger = (prevTail + ' ' + thisFirst).toUpperCase();
-                                        this.handleInitialPasscode(combinedNumTrigger);
+                                        if (combinedNumTrigger !== this._lastFinalProcessed) {
+                                            this.handleInitialPasscode(combinedNumTrigger);
+                                            this._lastFinalProcessed = combinedNumTrigger;
+                                        }
                                     } else {
                                         // 4) fallback: combined first-last check for any trigger word somewhere
                                         const combinedBoundary = (prevTail + ' ' + thisFirst).trim().toUpperCase();
                                         if (this.hasTriggerWord(combinedBoundary)) {
                                             this.logStatus(`Cross-boundary candidate detected: "${combinedBoundary}" — processing.`);
-                                            if (this.MATCHES.length === 0) {
-                                                this.handleInitialPasscode(combinedBoundary);
-                                            } else {
-                                                this.handleLetterInput(combinedBoundary);
+                                            if (combinedBoundary !== this._lastFinalProcessed) {
+                                                if (this.MATCHES.length === 0) {
+                                                    this.handleInitialPasscode(combinedBoundary);
+                                                } else {
+                                                    this.handleLetterInput(combinedBoundary);
+                                                }
+                                                this._lastFinalProcessed = combinedBoundary;
                                             }
                                         }
                                     }
@@ -597,11 +621,16 @@
                             this.logStatus("Cross-boundary check failed: " + e.message, true);
                         }
 
-                        // Now process the final normally
-                        if (this.MATCHES.length === 0) {
-                            this.handleInitialPasscode(upperTranscript);
+                        // Now process the final normally (but skip if identical to last processed final to avoid double-processing)
+                        if (upperTranscript !== this._lastFinalProcessed) {
+                            if (this.MATCHES.length === 0) {
+                                this.handleInitialPasscode(upperTranscript);
+                            } else {
+                                this.handleLetterInput(upperTranscript);
+                            }
+                            this._lastFinalProcessed = upperTranscript;
                         } else {
-                            this.handleLetterInput(upperTranscript);
+                            this.logStatus("Skipping processing of finalText because it's identical to last processed final (dedupe).");
                         }
 
                         // Update prevFinalTail to the last word of this final (used for next boundary)
@@ -1225,6 +1254,8 @@
                 // Reset the transcript widget content
                 document.getElementById('transcript-widget').textContent = "Ready. Double-tap blank area to hide/show."; 
                 this._prevFinalTail = '';
+                this._lastFinalProcessed = '';
+                this._lastInterimDisplayed = '';
 
                 if (returnToLock) {
                     this.updateNotification('INITIAL');
