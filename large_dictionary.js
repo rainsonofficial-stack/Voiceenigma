@@ -1,5 +1,6 @@
 const LARGE_DICTIONARY = [
   "aeroplane",
+  "abacus",
   "airconditioner",
   "aircooler",
   "airgun",
