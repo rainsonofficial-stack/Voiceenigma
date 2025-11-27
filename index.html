@@ -538,6 +538,41 @@
                 }
                 return indices;
             },
+            
+            /**
+             * Extracts unique words, limits to 6, and appends ", more..." if truncated.
+             * Also converts words to lowercase for display.
+             * @param {string[]} matches The full list of generated words.
+             * @returns {string} The formatted string for the notification.
+             */
+            getDistinctWordPreview(matches) {
+                if (!matches || matches.length === 0) {
+                    return "";
+                }
+
+                // 1. Get unique words (most distinct)
+                // Using a Set ensures only unique items remain.
+                const uniqueWords = Array.from(new Set(matches));
+
+                const maxWordsToShow = 6;
+                const isTruncated = uniqueWords.length > maxWordsToShow;
+
+                // 2. Take the first 6 unique words and convert them to lowercase
+                const displayedWords = uniqueWords
+                    .slice(0, maxWordsToShow)
+                    .map(w => w.toLowerCase());
+
+                // 3. Format the result string
+                let result = displayedWords.join(", ");
+
+                // 4. Add ", more..." if truncated
+                if (isTruncated) {
+                    result += ", more...";
+                }
+                
+                return result;
+            },
+
 
             /**
              * Single Tap: Ensures mic is active, especially after suspension/reopen.
@@ -890,13 +925,15 @@
                 } else if (status === 'WORD_LIST' && this.MATCHES.length > 0) {
                     // SUCCESS PATH: Display word list 
                     this.APP_STATE = 'AOD_LISTENING';
-                    const displayWords = this.MATCHES.map(w => w.toLowerCase()).join(', '); 
+                    
+                    // **MODIFIED:** Use the distinct word preview function with truncation
+                    const displayWordsPreview = this.getDistinctWordPreview(this.MATCHES);
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     
-                    // NEW: Display the code and applied letters before the word list
+                    // Display the code and applied letters before the word list
                     const codePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS;
-                    notifText.innerHTML = `To buy <span class="final-word-placeholder">${codePrefix}</span> ${displayWords}`;
+                    notifText.innerHTML = `To buy <span class="final-word-placeholder">${codePrefix}</span> ${displayWordsPreview}`;
                     
                     currentSecond.textContent = this.CURRENT_POSITION_INDEX.toString().padStart(2, '0');
                     this.updateListeningUI(true); 
