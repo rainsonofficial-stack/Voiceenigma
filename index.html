@@ -304,6 +304,7 @@
             _lastResultAt: 0,
             _restartAttempts: 0,
             _MAX_RESTART_BACKOFF_MS: 10000, // 10s cap
+            _prevFinalTail: '', // last final's last word (used to stitch across boundaries)
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
@@ -458,6 +459,16 @@
                 }
             },
 
+            // Helper: check if a text contains any D4 trigger word
+            hasTriggerWord(inputUpper) {
+                if (!inputUpper) return false;
+                const words = inputUpper.split(/\s+/).map(w => w.replace(/[^\w']/g,''));
+                for (const w of words) {
+                    if (this.D4_TRIGGERS[w]) return true;
+                }
+                return false;
+            },
+
             initVoiceRecognition() {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -480,7 +491,7 @@
                     this.isListening = true;
                 };
 
-                // ----------------- onresult (DO NOT abort here) -----------------
+                // ----------------- onresult (improved stitching and cross-boundary handling) -----------------
                 this.recognizer.onresult = (event) => {
                     // Update last result time for watchdog
                     this._lastResultAt = Date.now();
@@ -499,15 +510,26 @@
                         finalText = (this._lastInterim + ' ' + finalText).trim();
                         this._lastInterim = '';
                     } else {
+                        // keep the interim to show live text and for later stitching
                         this._lastInterim = interim.trim();
                     }
 
-                    const rawTranscript = (finalText + interim).trim();
+                    const rawTranscript = (finalText + ' ' + interim).trim();
                     const widget = document.getElementById('transcript-widget');
-                    if (widget && rawTranscript.length > 0) {
-                        const isInitialText = widget.textContent.includes("Ready. Double-tap");
-                        widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + rawTranscript;
-                        widget.scrollTop = widget.scrollHeight; 
+
+                    // Always show interim quickly so user sees live feedback
+                    if (widget) {
+                        try {
+                            const isInitialText = widget.textContent.includes("Ready. Double-tap");
+                            if (finalText.trim().length > 0) {
+                                widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + finalText.trim();
+                            }
+                            // show the most recent interim on a new line (but don't duplicate if empty)
+                            if (interim.trim().length > 0) {
+                                widget.textContent = widget.textContent + '\n' + interim.trim();
+                            }
+                            widget.scrollTop = widget.scrollHeight; 
+                        } catch (e) { /* ignore widget errors */ }
                     }
 
                     if (rawTranscript.length > 0) {
@@ -519,10 +541,42 @@
                     if (finalText.trim().length > 0) {
                         const upperTranscript = finalText.trim().toUpperCase();
 
+                        // --- CROSS-BOUNDARY CHECK ---
+                        // If we have a previous final tail (last word from previous final),
+                        // combine it with the FIRST word from this final and check for triggers.
+                        try {
+                            const prevTail = (this._prevFinalTail || '').trim();
+                            const thisFirst = (upperTranscript.split(/\s+/)[0] || '').trim();
+
+                            if (prevTail.length > 0 && thisFirst.length > 0) {
+                                const combinedBoundary = (prevTail + ' ' + thisFirst).trim().toUpperCase();
+                                // if combined boundary contains a trigger word, process it
+                                if (this.hasTriggerWord(combinedBoundary)) {
+                                    this.logStatus(`Cross-boundary candidate detected: "${combinedBoundary}" — processing.`);
+                                    if (this.MATCHES.length === 0) {
+                                        this.handleInitialPasscode(combinedBoundary);
+                                    } else {
+                                        this.handleLetterInput(combinedBoundary);
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            this.logStatus("Cross-boundary check failed: " + e.message, true);
+                        }
+
+                        // Now process the final normally
                         if (this.MATCHES.length === 0) {
                             this.handleInitialPasscode(upperTranscript);
                         } else {
                             this.handleLetterInput(upperTranscript);
+                        }
+
+                        // Update prevFinalTail to the last word of this final (used for next boundary)
+                        try {
+                            const words = upperTranscript.split(/\s+/).filter(Boolean);
+                            this._prevFinalTail = words.length > 0 ? words[words.length - 1].replace(/[^\w']/g,'') : '';
+                        } catch (e) {
+                            this._prevFinalTail = '';
                         }
                     }
                 };
@@ -943,7 +997,7 @@
                 
                 let magicLetter = null;
                 const upperTranscript = transcript.toUpperCase();
-                
+
                 // -----------------------------------------------------------
                 // 1. PRIMARY LOGIC CHECK: CONSECUTIVE WORD REPETITION (PRIORITY 1)
                 // -----------------------------------------------------------
@@ -1124,6 +1178,7 @@
                 
                 // Reset the transcript widget content
                 document.getElementById('transcript-widget').textContent = "Ready. Double-tap blank area to hide/show."; 
+                this._prevFinalTail = '';
 
                 if (returnToLock) {
                     this.updateNotification('INITIAL');
