@@ -286,6 +286,7 @@ const LARGE_DICTIONARY = [
   "flowervase",
   "flute",
   "folder",
+  "food",
   "football",
   "fork",
   "fountain",
