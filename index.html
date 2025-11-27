@@ -33,7 +33,6 @@
             user-select: none;
             color: #c4c4c4; 
             box-sizing: border-box;
-            /* Position adjusted in previous step */
             padding-top: 180px; 
             padding-bottom: 30px; 
         }
@@ -48,6 +47,7 @@
             margin: -20px; 
             -webkit-tap-highlight-color: transparent; 
             outline: none; 
+            cursor: pointer; /* Indicate it's interactive */
         }
 
         /* Clock Widget */
@@ -75,10 +75,18 @@
             border-radius: 6px; 
             display: flex;
             align-items: center; 
-            transition: opacity 0.5s;
+            transition: opacity 0.3s ease-in-out; /* Smoother fade for toggle */
             margin-top: 10px; 
             min-height: 30px; 
+            user-select: none;
         }
+        
+        /* New style for hiding the notification widget */
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none; /* Prevents accidental interaction when hidden */
+        }
+        
         .notif-icon-svg {
             margin-right: 6px; 
             color: #c4c4c4; 
@@ -284,8 +292,8 @@
             MATCHES: [], 
             HISTORY: [], 
             CURRENT_POSITION_INDEX: 0, 
-            FULL_PASSCODE: '',          // NEW: Stores the 4-digit D1D2D3D4 code
-            APPLIED_LETTERS: '',        // NEW: Stores the sequence of applied letters
+            FULL_PASSCODE: '',          // Stores the 4-digit D1D2D3D4 code
+            APPLIED_LETTERS: '',        // Stores the sequence of applied letters
             recognizer: null,
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
@@ -341,8 +349,8 @@
                         history: this.HISTORY,
                         position: this.CURRENT_POSITION_INDEX,
                         state: this.APP_STATE,
-                        fullPasscode: this.FULL_PASSCODE,        // Store new state
-                        appliedLetters: this.APPLIED_LETTERS     // Store new state
+                        fullPasscode: this.FULL_PASSCODE,        
+                        appliedLetters: this.APPLIED_LETTERS     
                     };
                     sessionStorage.setItem(this.SESSION_KEY, JSON.stringify(stateToSave));
                 } catch (e) {
@@ -359,8 +367,8 @@
                         this.HISTORY = state.history || [];
                         this.CURRENT_POSITION_INDEX = state.position || 0;
                         this.APP_STATE = state.state || 'AOD_LOCK';
-                        this.FULL_PASSCODE = state.fullPasscode || '';      // Load new state
-                        this.APPLIED_LETTERS = state.appliedLetters || '';  // Load new state
+                        this.FULL_PASSCODE = state.fullPasscode || '';      
+                        this.APPLIED_LETTERS = state.appliedLetters || '';  
 
                         if (this.MATCHES.length > 0 && this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                             this.logStatus("State loaded. Attempting to resume puzzle.");
@@ -402,8 +410,6 @@
                         this.isListening = false;
                         return;
                     }
-                    // No need to abort here, let the browser handle state changes via its error/end handlers
-                    // this.recognizer.abort(); 
                     this.recognizer.start();
                     this.logStatus("Started continuous listening session. Recognizer language set to: " + this.recognizer.lang);
                 } catch (e) {
@@ -449,7 +455,6 @@
                 }
                 
                 this.recognizer = new SpeechRecognition();
-                // continuous = true allows for longer pauses within a thought/sentence.
                 this.recognizer.continuous = true; 
                 this.recognizer.interimResults = false;
                 this.recognizer.lang = 'en-US'; 
@@ -465,7 +470,6 @@
                     this.isListening = false; 
 
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
-                        // Restart handles the loop, set to MINIMAL delay for instant transition.
                         this.logStatus(`Listening session ended. Recognizer state: ${this.recognizer.readyState}. Restarting instantly...`);
                         setTimeout(() => this.startListening(), this.RESTART_DELAY_MS);
                     } else {
@@ -497,7 +501,6 @@
                     this.logStatus(`RAW Transcript received: "${upperTranscript}"`); 
                     
                     // CRITICAL: Manually stop the continuous session after receiving a result.
-                    // This forces onend to fire, which then restarts the mic for a fresh session.
                     this.logStatus("Result received. Stopping session for processing and instant restart via onend.");
                     this.recognizer.abort(); 
 
@@ -541,31 +544,23 @@
             
             /**
              * Extracts unique words, limits to 6, and appends ", more..." if truncated.
-             * Also converts words to lowercase for display.
-             * @param {string[]} matches The full list of generated words.
-             * @returns {string} The formatted string for the notification.
              */
             getDistinctWordPreview(matches) {
                 if (!matches || matches.length === 0) {
                     return "";
                 }
 
-                // 1. Get unique words (most distinct)
-                // Using a Set ensures only unique items remain.
                 const uniqueWords = Array.from(new Set(matches));
 
                 const maxWordsToShow = 6;
                 const isTruncated = uniqueWords.length > maxWordsToShow;
 
-                // 2. Take the first 6 unique words and convert them to lowercase
                 const displayedWords = uniqueWords
                     .slice(0, maxWordsToShow)
                     .map(w => w.toLowerCase());
 
-                // 3. Format the result string
                 let result = displayedWords.join(", ");
 
-                // 4. Add ", more..." if truncated
                 if (isTruncated) {
                     result += ", more...";
                 }
@@ -575,24 +570,26 @@
 
 
             /**
-             * Single Tap: Ensures mic is active, especially after suspension/reopen.
+             * Single Tap: Ensures mic is active AND toggles notification visibility.
              */
             handleSingleTap(event) {
+                // 1. Notification Toggle (NEW USER REQUEST)
+                this.toggleNotificationWidget();
+
+                // 2. Voice Recognition Logic (Existing)
                 if (!this.recognizer) {
                     this.logStatus("Single Tap: Recognizer not initialized.", true);
                     return;
                 }
 
                 if (this.APP_STATE === 'AOD_DISPLAY_FINAL') {
-                    this.logStatus("Single Tap: In final display state (Ignored).");
+                    this.logStatus("Single Tap: In final display state (Ignored mic start).");
                     return;
                 }
                 
                 const readyState = this.recognizer.readyState;
                 this.logStatus(`Single Tap detected. Recognizer readyState: ${readyState}, isListening flag: ${this.isListening}`);
 
-                // If the readyState is not 'listening' (i.e., 'idle' or 'closed'), force a restart.
-                // We reset the flag here just in case it was stuck by the browser.
                 if (readyState !== 'listening') {
                     this.isListening = false;
                     this.logStatus("Forcing mic restart (readyState was not 'listening').");
@@ -608,9 +605,9 @@
                 this.resetApp(true); 
             },
             
-            // Toggle Transcript Widget
+            // Toggle Transcript Widget (debug)
             toggleTranscriptWidget(event) {
-                // Ignore double clicks on the clock container as that is the master reset
+                // Ignore double clicks on the clock container or player
                 if (event.target.closest('#clock-container') || event.target.closest('#music-player')) {
                     return; 
                 }
@@ -623,6 +620,18 @@
                 }
             },
             
+            /**
+             * Toggles Notification Widget visibility. Called by single-tap on clock.
+             */
+            toggleNotificationWidget() {
+                const notif = document.getElementById('system-notification');
+                if (notif) {
+                    notif.classList.toggle('hidden');
+                    const isHidden = notif.classList.contains('hidden');
+                    this.logStatus(`Notification widget ${isHidden ? 'hidden' : 'shown'} via clock tap.`);
+                }
+            },
+
             // --- Core Logic (Filter functions) ---
             filterDictionary(d1, d2, d3, d4, initialList) {
                 if (typeof initialList === 'undefined' || !Array.isArray(initialList) || initialList.length === 0) { 
@@ -639,15 +648,13 @@
 
                     // D1 (Word Length)
                     if (d1 === 0) {
-                        // D1=0 means EXACTLY 10 letters
                         if (length !== 10) return false;
                     } else {
-                        // D1=X (1-9) means X OR X+10 letters
                         if (length !== d1 && length !== (d1 + 10)) return false;
                     }
                     
                     // D2 (First Vowel Position)
-                    // D2=0 is the wildcard (as confirmed by the user in a previous step)
+                    // D2=0 is the wildcard
                     if (d2 > 0 && (vIndices.length < 1 || vIndices[0] !== d2)) return false;
                     
                     // D3 (Second Vowel Position)
@@ -688,6 +695,27 @@
                 return bestIndex;
             },
 
+            // D2/D3 Interchange Rule Logic (New Feature 3)
+            getSwappedD2D3(d2, d3) {
+                // Key is D2D3 string. Values are [New D2, New D3]
+                const swapMap = {
+                    '30': [1, 3], '13': [3, 0],
+                    '40': [1, 4], '14': [4, 0],
+                    '50': [1, 5], '15': [5, 0],
+                    '60': [1, 6], '16': [6, 0],
+                    '70': [1, 7], '17': [7, 0],
+                    '80': [1, 8], '18': [8, 0],
+                    '90': [1, 9], '19': [9, 0],
+                };
+
+                const key = String(d2) + String(d3);
+                if (swapMap[key]) {
+                    return { newD2: swapMap[key][0], newD3: swapMap[key][1] };
+                }
+                return null; 
+            },
+
+
             // --- Handlers ---
             
             handleInitialPasscode(transcript) {
@@ -712,26 +740,24 @@
                     // --- END DUAL CHECK ---
 
                     // 2. Check for number words (use the clean word)
-                    // Treat "DOT" or "POINT" as the number 1
                     if (cleanWord === 'DOT' || cleanWord === 'POINT') {
                         numbers.push(1);
                         continue;
                     }
                     const spelled = this.NUMBER_WORDS[cleanWord];
-                    if (spelled !== undefined) { // Check for undefined (allows 0)
+                    if (spelled !== undefined) { 
                         numbers.push(spelled);
                         continue;
                     } 
                     
                     // 3. Check for raw digits or floating point numbers (use the raw word)
                     if (/^\d+(\.\d+)?$/.test(w)) {
-                        // Handle cases like '924' being transcribed as one word
                         for (const char of w) {
                             if (char === '.') {
-                                numbers.push(1); // '.' is interpreted as 1
+                                numbers.push(1); 
                             } else {
                                 const digit = parseInt(char, 10);
-                                if (digit >= 0 && digit <= 9) { // NOW accepts 0
+                                if (digit >= 0 && digit <= 9) { 
                                     numbers.push(digit);
                                 }
                             }
@@ -752,14 +778,12 @@
                 }
                 
                 if (numbers.length > 3) {
-                    // FIX: If more than 3 numbers, prioritize the first for D1, and the last two for D2 and D3.
                     if (numbers.length >= 3) { 
                         d1 = numbers[0]; 
                         d2 = numbers[numbers.length - 2];
                         d3 = numbers[numbers.length - 1];
                         this.logStatus(`OVERRIDE: Parsed ${numbers.length} digits. Forced D1=${d1}, D2=${d2}, D3=${d3}`);
                     } else {
-                         // This case shouldn't realistically happen if length > 3, but safe guard.
                          this.logStatus(`PASSCODE FAILURE: Too many digits but somehow less than 3.`, true);
                          this.updateNotification('INITIAL'); 
                          return; 
@@ -781,8 +805,17 @@
                 }
                 // --- END CRITICAL FAILURE CHECKS ---
 
+                const originalD1 = d1;
+                const originalD2 = d2;
+                const originalD3 = d3;
+                const originalD4 = d4;
 
-                this.logStatus(`PASSCODE PARSED: D1=${d1}${d2}${d3}${d4}. (Length: ${d1 === 0 ? '10' : d1 + ' or ' + (d1 + 10)}), D2=${d2}, D3=${d3}, D4=${d4}`);
+                // CRITICAL CHANGE 1: Store the full passcode immediately
+                this.FULL_PASSCODE = `${originalD1}${originalD2}${originalD3}${originalD4}`;
+                this.APPLIED_LETTERS = ''; // Reset applied letters for a new code
+
+
+                this.logStatus(`PASSCODE PARSED: D1=${originalD1}${originalD2}${originalD3}${originalD4}. (Length: ${originalD1 === 0 ? '10' : originalD1 + ' or ' + (originalD1 + 10)}), D2=${originalD2}, D3=${originalD3}, D4=${originalD4}`);
 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
                     this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); 
@@ -790,7 +823,32 @@
                     return; 
                 }
 
-                const matches = this.filterDictionary(d1, d2, d3, d4, LARGE_DICTIONARY);
+                // Initial filter attempt
+                let matches = this.filterDictionary(originalD1, originalD2, originalD3, originalD4, LARGE_DICTIONARY);
+
+                if (matches.length === 0) {
+                    // --- START D2/D3 SWAP LOGIC (Change 3) ---
+                    const swapResult = this.getSwappedD2D3(originalD2, originalD3);
+                    
+                    if (swapResult) {
+                        const { newD2, newD3 } = swapResult;
+                        this.logStatus(`0 matches found for ${originalD2}${originalD3}. Attempting swap to ${newD2}${newD3}.`);
+
+                        // Re-run filter with swapped D2/D3
+                        const swappedMatches = this.filterDictionary(originalD1, newD2, newD3, originalD4, LARGE_DICTIONARY);
+
+                        if (swappedMatches.length > 0) {
+                            this.logStatus(`SUCCESS: Found ${swappedMatches.length} matches with swapped code. Using these matches.`);
+                            matches = swappedMatches; 
+                        } else {
+                             this.logStatus("Swap failed (0 matches). Proceeding to NO_MATCHES notification.");
+                        }
+                    } else {
+                        this.logStatus("Swap condition not met. Proceeding to NO_MATCHES notification.");
+                    }
+                    // --- END D2/D3 SWAP LOGIC ---
+                }
+
 
                 if (matches.length === 0) {
                     // SCENARIO 2: FILTERING FAILED (0 matches). 
@@ -799,10 +857,6 @@
                     return; 
                 }
                 
-                // NEW: Store the passcode
-                this.FULL_PASSCODE = `${d1}${d2}${d3}${d4}`;
-                this.APPLIED_LETTERS = ''; // Reset applied letters for a new code
-
                 this.HISTORY = []; 
                 this.HISTORY.push(matches);
                 this.MATCHES = matches;
@@ -825,17 +879,14 @@
                 // 1. PRIMARY LOGIC CHECK: CONSECUTIVE WORD REPETITION (PRIORITY 1)
                 // -----------------------------------------------------------
                 
-                // Clean the transcript of basic punctuation and split into words
                 const cleanTranscript = upperTranscript.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").trim();
                 const words = cleanTranscript.split(/\s+/).filter(w => w.length > 0);
 
                 for (let i = 0; i < words.length - 1; i++) {
-                    // Check if the current word and the next word are identical
                     if (words[i] === words[i+1]) {
-                        // Primary trigger fired: Extract first letter of the repeated word
                         magicLetter = words[i][0].toUpperCase();
                         this.logStatus(`PRIMARY TRIGGER (Repetition) activated by '${words[i]} ${words[i+1]}'. Magic Letter: ${magicLetter}`);
-                        break; // Stop iteration; Primary rule takes precedence
+                        break; 
                     }
                 }
 
@@ -844,7 +895,6 @@
                 // -----------------------------------------------------------
                 
                 if (!magicLetter) {
-                    // Only run the Secondary check if the Primary check failed (no repetition found)
                     const trigger = "INTERESTING";
                     const triggerIndex = upperTranscript.indexOf(trigger);
                     
@@ -853,8 +903,6 @@
                         return; 
                     }
                     
-                    // We only care about the words before the trigger word
-                    // Re-split the transcript focusing on the area before 'INTERESTING'
                     const preTriggerArea = upperTranscript.substring(0, triggerIndex).trim();
                     const preWords = preTriggerArea.split(/\s+/).filter(w => w.length > 0); 
                     
@@ -864,7 +912,6 @@
                     }
                     
                     const spokenWord = preWords[preWords.length - 1];
-                    // Secondary action: extract first letter of the preceding word
                     magicLetter = spokenWord[0].toUpperCase();
                     this.logStatus(`SECONDARY TRIGGER ('interesting') activated by preceding word '${spokenWord}'. Magic Letter: ${magicLetter}`);
                 }
@@ -874,7 +921,6 @@
                 // -----------------------------------------------------------
 
                 if (!magicLetter) {
-                    // Should be caught in the checks above, but safety check
                     return; 
                 }
                 
@@ -891,7 +937,6 @@
                     return; 
                 }
                 
-                // NEW: Store the applied letter
                 this.APPLIED_LETTERS += magicLetter;
 
                 this.HISTORY.push(filtered);
@@ -916,9 +961,8 @@
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     
                     const finalWord = this.MATCHES[0];
-                    const fullCodePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS; // NEW
+                    const fullCodePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS; 
                     
-                    // NEW: Display the full code prefix before the final message
                     notifText.innerHTML = `<span class="final-word-placeholder">${fullCodePrefix}</span> Sohan needs ${finalWord.toLowerCase()} to...`; 
                     currentSecond.textContent = '00';
                     
@@ -926,12 +970,10 @@
                     // SUCCESS PATH: Display word list 
                     this.APP_STATE = 'AOD_LISTENING';
                     
-                    // **MODIFIED:** Use the distinct word preview function with truncation
                     const displayWordsPreview = this.getDistinctWordPreview(this.MATCHES);
                     
                     notifIcon.innerHTML = this.ICON_CHAT_SVG; 
                     
-                    // Display the code and applied letters before the word list
                     const codePrefix = this.FULL_PASSCODE + this.APPLIED_LETTERS;
                     notifText.innerHTML = `To buy <span class="final-word-placeholder">${codePrefix}</span> ${displayWordsPreview}`;
                     
@@ -943,7 +985,8 @@
                     // SCENARIO 2 PATH: Valid code, 0 matches. Keeps listening for a new code.
                     this.APP_STATE = 'AOD_LISTENING'; 
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
-                    notifText.textContent = "Update not available"; 
+                    // CRITICAL CHANGE 1: Display the full code on failure
+                    notifText.innerHTML = `<span class="final-word-placeholder">${this.FULL_PASSCODE}</span> Update not available`; 
                     currentSecond.textContent = '00';
                     
                     // Add debug message to transcript widget 
@@ -959,7 +1002,7 @@
                     notifIcon.innerHTML = this.ICON_GEAR_SVG;
                     notifText.textContent = "System Update Available"; 
                     currentSecond.textContent = '00';
-                    this.clearState(); // Clears all state variables including NEW ones
+                    this.clearState(); // Clears all state variables
                     
                     if (!this.isListening) {
                         this.APP_STATE = 'AOD_LOCK';
@@ -1006,8 +1049,8 @@
                 this.MATCHES = [];
                 this.HISTORY = [];
                 this.CURRENT_POSITION_INDEX = 0;
-                this.FULL_PASSCODE = '';        // Reset new state
-                this.APPLIED_LETTERS = '';      // Reset new state
+                this.FULL_PASSCODE = '';        
+                this.APPLIED_LETTERS = '';      
                 document.getElementById('current-second').textContent = '00';
                 
                 // Reset the transcript widget content
@@ -1036,7 +1079,6 @@
             registerServiceWorker() {
                 if ('serviceWorker' in navigator) {
                     window.addEventListener('load', () => {
-                        // CRITICAL: We register the standard worker here
                         navigator.serviceWorker.register('./sw.js', { scope: './' }) 
                             .then(reg => {
                                 this.logStatus('Service Worker (SW) registration successful.');
@@ -1066,6 +1108,7 @@
                 
                 const clockContainer = document.getElementById('clock-container');
                 const appElement = document.getElementById('app');
+                const systemNotification = document.getElementById('system-notification'); 
                 
                 // 1. VOICE INPUT HANDLERS
                 
@@ -1083,7 +1126,7 @@
                         APP.handleDoubleTap(e);
                         lastTap = 0; // Reset last tap time after successful double tap
                     } else {
-                        // Single Tap (Mic Restart - the core fix for resume/reopen)
+                        // Single Tap (Mic Restart AND Notification Toggle)
                         APP.handleSingleTap(e); 
                     }
                     lastTap = now;
@@ -1100,18 +1143,18 @@
                 // Double tap on app body (outside clock/player) to toggle transcript widget
                 appElement.addEventListener('dblclick', (e) => this.toggleTranscriptWidget(e));
                 
+                // CRITICAL REMOVAL: Removed the single tap listener from the notification widget.
+                // It is now handled by the clock-container's handleSingleTap.
+                
                 // --- MIC AUTORESTART ON FOCUS (NEW FEATURE) ---
                 window.addEventListener('focus', () => {
                     this.logStatus("Window gained focus. Attempting to restart listening...");
-                    // Only start listening if we are not in the final, stopped state
                     if (this.APP_STATE !== 'AOD_DISPLAY_FINAL') {
                         this.startListening();
                     }
                 });
 
                 window.addEventListener('blur', () => {
-                    // The browser typically stops the mic when the tab/window loses focus, 
-                    // so we just log the event. 'focus' handles the restart.
                     this.logStatus("Window lost focus/minimized.");
                 });
                 // --- END MIC AUTORESTART ---
