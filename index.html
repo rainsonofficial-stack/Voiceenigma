@@ -282,8 +282,8 @@
         const APP = {
             // Configuration
             PASSCODE_LENGTH: 4,
-            // MINIMAL RESTART DELAY: increased to 300ms for gentler restarts
-            RESTART_DELAY_MS: 300, 
+            // MINIMAL RESTART DELAY: reduced for faster restart
+            RESTART_DELAY_MS: 100, 
             // Watchdog interval (ms) used to detect stalls
             RECOGNIZER_WATCHDOG_MS: 3000,
             SESSION_KEY: 'aod_magic_state',
@@ -300,10 +300,14 @@
 
             // Stitch/interim helper
             _lastInterim: '',
+            // ADDED: small state to avoid transcript echo/duplicate lines
+            _lastDisplayedFinal: '',
+            _lastDisplayedInterim: '',
             _watchdogTimer: null,
             _lastResultAt: 0,
             _restartAttempts: 0,
             _MAX_RESTART_BACKOFF_MS: 10000, // 10s cap
+            _prevFinalTail: '', // last final's last word (used to stitch across boundaries)
 
             // D4 Shape Definitions (A-Z split into 3 groups based on first letter shape)
             LETTER_SHAPES: {
@@ -505,8 +509,29 @@
                     const rawTranscript = (finalText + interim).trim();
                     const widget = document.getElementById('transcript-widget');
                     if (widget && rawTranscript.length > 0) {
+                        // --- CHANGED: Avoid duplicate lines by appending only final or interim
                         const isInitialText = widget.textContent.includes("Ready. Double-tap");
-                        widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + rawTranscript;
+                        const f = finalText.trim();
+                        const it = interim.trim();
+
+                        if (f.length > 0) {
+                            // append final only if it's different from last final displayed
+                            if (f !== this._lastDisplayedFinal) {
+                                widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + f;
+                                this._lastDisplayedFinal = f;
+                                // clear lastDisplayedInterim to allow same word as interim next time
+                                this._lastDisplayedInterim = '';
+                            } else {
+                                // same final as last -> likely duplicate/effect of incremental results; ignore
+                                // (this prevents "monkey\nmonkey")
+                            }
+                        } else if (it.length > 0) {
+                            // show interim but avoid repeating same interim string
+                            if (it !== this._lastDisplayedInterim) {
+                                widget.textContent = (isInitialText ? '' : widget.textContent + '\n') + it;
+                                this._lastDisplayedInterim = it;
+                            }
+                        }
                         widget.scrollTop = widget.scrollHeight; 
                     }
 
@@ -527,7 +552,7 @@
                     }
                 };
 
-                // ----------------- onend with gentle backoff restart -----------------
+                // ----------------- onend with gentle but faster backoff restart -----------------
                 this.recognizer.onend = () => {
                     this.isListening = false; 
 
@@ -537,10 +562,10 @@
                         return;
                     }
 
-                    // Adaptive backoff restart strategy
+                    // Adaptive backoff restart strategy (made much faster)
                     this._restartAttempts++;
-                    const backoff = Math.min(200 + (this._restartAttempts * 200), this._MAX_RESTART_BACKOFF_MS);
-                    const safeBackoff = Math.max(this.RESTART_DELAY_MS || 300, backoff);
+                    const backoff = Math.min(50 + (this._restartAttempts * 50), this._MAX_RESTART_BACKOFF_MS);
+                    const safeBackoff = Math.max(this.RESTART_DELAY_MS || 100, backoff);
                     this.logStatus(`Listening session ended. Scheduling restart #${this._restartAttempts} in ${safeBackoff}ms.`);
                     setTimeout(() => {
                         if (this.APP_STATE !== 'AOD_DISPLAY_FINAL' && this.APP_STATE !== 'AOD_LOCK') {
@@ -788,113 +813,103 @@
             // --- Handlers ---
             
             handleInitialPasscode(transcript) {
-                // Enforce: numeric tokens used for D1/D2/D3 must be within MAX_WORD_DISTANCE_FROM_D4 words of the D4 trigger.
-                const MAX_WORD_DISTANCE_FROM_D4 = 6; // user requested constraint
-
                 let d4 = 0;
-                const numbersWithIndex = []; // collects { idx: wordIndex, val: digit }
-                const rawWords = transcript.split(/\s+/).map(w => w.trim()).filter(w => w.length > 0);
-
-                let triggerIndex = -1;
-
-                for (let i = 0; i < rawWords.length; i++) {
-                    const w = rawWords[i];
+                let numbers = [];
+                // Clean up punctuation and split words
+                const rawWords = transcript.split(' ').map(w => w.trim()).filter(w => w.length > 0);
+                
+                for (const w of rawWords) {
                     const cleanWord = w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").toUpperCase();
-
-                    // Check D4 trigger - record last trigger position (prefer last found in phrase)
+                    
+                    // 1. Check D4 Trigger (use the clean word)
                     const triggerValue = this.D4_TRIGGERS[cleanWord];
-                    if (triggerValue) {
-                        d4 = triggerValue;
-                        triggerIndex = i;
-                    }
-
-                    // DUAL check
+                    if (triggerValue) { d4 = triggerValue; }
+                    
+                    // --- DUAL CHECK (D2=1, D3=2) ---
                     if (cleanWord === 'DUAL') {
-                        numbersWithIndex.push({ idx: i, val: 1 });
-                        numbersWithIndex.push({ idx: i, val: 2 });
+                        numbers.push(1);
+                        numbers.push(2);
                         continue;
                     }
+                    // --- END DUAL CHECK ---
 
-                    // POINT/DOT -> treated as '1' between digits
+                    // 2. Check for number words (use the clean word)
                     if (cleanWord === 'DOT' || cleanWord === 'POINT') {
-                        numbersWithIndex.push({ idx: i, val: 1 });
+                        numbers.push(1);
                         continue;
                     }
-
-                    // NUMBER_WORDS mapping
                     const spelled = this.NUMBER_WORDS[cleanWord];
-                    if (spelled !== undefined) {
-                        numbersWithIndex.push({ idx: i, val: spelled });
+                    if (spelled !== undefined) { 
+                        numbers.push(spelled);
                         continue;
-                    }
-
-                    // raw digit sequences (e.g., "625" => 6,2,5)
+                    } 
+                    
+                    // 3. Check for raw digits or floating point numbers (use the raw word)
                     if (/^\d+(\.\d+)?$/.test(w)) {
                         for (const char of w) {
                             if (char === '.') {
-                                numbersWithIndex.push({ idx: i, val: 1 });
+                                numbers.push(1); 
                             } else {
                                 const digit = parseInt(char, 10);
-                                if (!Number.isNaN(digit) && digit >= 0 && digit <= 9) {
-                                    numbersWithIndex.push({ idx: i, val: digit });
+                                if (digit >= 0 && digit <= 9) { 
+                                    numbers.push(digit);
                                 }
                             }
                         }
                         continue;
                     }
                 }
+                
+                this.logStatus(`DEBUG: Numbers Parsed: [${numbers.join(', ')}] (Length: ${numbers.length}), D4 Trigger Value: ${d4}`);
 
-                this.logStatus(`DEBUG: NumbersWithIndex Parsed: [${numbersWithIndex.map(n => n.val + '@' + n.idx).join(', ')}], TriggerIndex: ${triggerIndex}, D4: ${d4}`);
+                let d1, d2, d3;
 
-                // require a trigger
+                // --- CRITICAL FAILURE CHECKS AND D1, D2, D3 ASSIGNMENT ---
                 if (d4 === 0) {
                     this.logStatus(`PASSCODE FAILURE: Missing D4 Trigger Word.`, true);
                     this.updateNotification('INITIAL'); 
                     return;
                 }
-
-                // filter numbers to within allowed distance from trigger (if triggerIndex known)
-                let filteredNumbers = [];
-                if (triggerIndex >= 0) {
-                    filteredNumbers = numbersWithIndex
-                        .filter(n => Math.abs(n.idx - triggerIndex) <= MAX_WORD_DISTANCE_FROM_D4)
-                        .map(n => n.val);
-                } else {
-                    filteredNumbers = numbersWithIndex.map(n => n.val);
-                }
-
-                this.logStatus(`Filtered numbers (within ${MAX_WORD_DISTANCE_FROM_D4} words of trigger): [${filteredNumbers.join(', ')}]`);
-
-                let d1, d2, d3;
-
-                if (filteredNumbers.length > 3) {
-                    d1 = filteredNumbers[0];
-                    d2 = filteredNumbers[filteredNumbers.length - 2];
-                    d3 = filteredNumbers[filteredNumbers.length - 1];
-                    this.logStatus(`OVERRIDE: Using filtered numbers. D1=${d1}, D2=${d2}, D3=${d3}`);
-                } else if (filteredNumbers.length === 3) {
-                    [d1, d2, d3] = filteredNumbers;
-                    this.logStatus("Parsed 3 filtered digits (D1, D2, D3).", false);
-                } else if (filteredNumbers.length === 2) {
+                
+                if (numbers.length > 3) {
+                    if (numbers.length >= 3) { 
+                        d1 = numbers[0]; 
+                        d2 = numbers[numbers.length - 2];
+                        d3 = numbers[numbers.length - 1];
+                        this.logStatus(`OVERRIDE: Parsed ${numbers.length} digits. Forced D1=${d1}, D2=${d2}, D3=${d3}`);
+                    } else {
+                         this.logStatus(`PASSCODE FAILURE: Too many digits but somehow less than 3.`, true);
+                         this.updateNotification('INITIAL'); 
+                         return; 
+                    }
+                } else if (numbers.length === 3) {
+                    // Standard case: D1, D2, D3 provided explicitly
+                    [d1, d2, d3] = numbers;
+                    this.logStatus("Parsed 3 digits (D1, D2, D3).", false);
+                } else if (numbers.length === 2) {
+                    // D1 is missing, so D1 defaults to 0 (meaning 10 letters)
                     d1 = 0;
-                    [d2, d3] = filteredNumbers;
-                    this.logStatus("Parsed 2 filtered digits (D2, D3). D1 defaults to 0 (Length 10).", false);
+                    [d2, d3] = numbers;
+                    this.logStatus("Parsed 2 digits (D2, D3). D1 defaults to 0 (Length 10).", false);
                 } else {
-                    this.logStatus(`PASSCODE FAILURE: Not enough numeric tokens within ${MAX_WORD_DISTANCE_FROM_D4} of trigger. Found ${filteredNumbers.length}.`, true);
+                    // Hard failure for 0 or 1 digits
+                    this.logStatus(`PASSCODE FAILURE: Failed to parse required 2 or 3 digits. Found only ${numbers.length}.`, true);
                     this.updateNotification('INITIAL'); 
-                    return;
+                    return; 
                 }
+                // --- END CRITICAL FAILURE CHECKS ---
 
                 const originalD1 = d1;
                 const originalD2 = d2;
                 const originalD3 = d3;
                 const originalD4 = d4;
 
-                // store full passcode
+                // CRITICAL CHANGE 1: Store the full passcode immediately
                 this.FULL_PASSCODE = `${originalD1}${originalD2}${originalD3}${originalD4}`;
-                this.APPLIED_LETTERS = '';
+                this.APPLIED_LETTERS = ''; // Reset applied letters for a new code
 
-                this.logStatus(`PASSCODE PARSED: D1=${originalD1}${originalD2}${originalD3}${originalD4}. D2=${originalD2}, D3=${originalD3}, D4=${originalD4}`);
+
+                this.logStatus(`PASSCODE PARSED: D1=${originalD1}${originalD2}${originalD3}${originalD4}. (Length: ${originalD1 === 0 ? '10' : originalD1 + ' or ' + (originalD1 + 10)}), D2=${originalD2}, D3=${originalD3}, D4=${originalD4}`);
 
                 if (typeof LARGE_DICTIONARY === 'undefined' || LARGE_DICTIONARY.length === 0) { 
                     this.logStatus("Dictionary (LARGE_DICTIONARY) not loaded. Resetting.", true); 
@@ -906,12 +921,14 @@
                 let matches = this.filterDictionary(originalD1, originalD2, originalD3, originalD4, LARGE_DICTIONARY);
 
                 if (matches.length === 0) {
-                    // attempt swap logic
+                    // --- START D2/D3 SWAP LOGIC (Change 3) ---
                     const swapResult = this.getSwappedD2D3(originalD2, originalD3);
                     
                     if (swapResult) {
                         const { newD2, newD3 } = swapResult;
                         this.logStatus(`0 matches found for ${originalD2}${originalD3}. Attempting swap to ${newD2}${newD3}.`);
+
+                        // Re-run filter with swapped D2/D3
                         const swappedMatches = this.filterDictionary(originalD1, newD2, newD3, originalD4, LARGE_DICTIONARY);
 
                         if (swappedMatches.length > 0) {
@@ -923,14 +940,17 @@
                     } else {
                         this.logStatus("Swap condition not met. Proceeding to NO_MATCHES notification.");
                     }
+                    // --- END D2/D3 SWAP LOGIC ---
                 }
 
+
                 if (matches.length === 0) {
+                    // SCENARIO 2: FILTERING FAILED (0 matches). 
                     this.logStatus("Code filtered to 0 matches. Displaying 'Update not available' and restarting listener.");
                     this.updateNotification('NO_MATCHES'); 
                     return; 
                 }
-
+                
                 this.HISTORY = []; 
                 this.HISTORY.push(matches);
                 this.MATCHES = matches;
