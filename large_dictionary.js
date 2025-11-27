@@ -387,6 +387,7 @@ const LARGE_DICTIONARY = [
   "joggingstroller",
   "joystick",
   "jug",
+  "katana",
   "kennel",
   "kettle",
   "key",
