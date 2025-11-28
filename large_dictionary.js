@@ -42,6 +42,7 @@ const LARGE_DICTIONARY = [
   "basin",
   "basket",
   "bat",
+  "bathrobe",
   "battery",
   "beachumbrella",
   "beanbag",
