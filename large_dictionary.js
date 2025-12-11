@@ -454,6 +454,7 @@ const LARGE_DICTIONARY = [
   "medicine",
   "melon",
   "memorycard",
+  "microscope",
   "microwave",
   "microphone",
   "milk",
