@@ -49,6 +49,24 @@ jobs:
           cp native-plugin/SpeechBridgePlugin.java android/app/src/main/java/com/rainenterprises/voiceenigma/SpeechBridgePlugin.java
           cp native-plugin/MainActivity.java android/app/src/main/java/com/rainenterprises/voiceenigma/MainActivity.java
 
+      - name: Add Vosk library dependency
+        run: |
+          cat >> android/app/build.gradle << 'GRADLE'
+
+          dependencies {
+              implementation 'com.alphacephei:vosk-android:0.3.75'
+          }
+          GRADLE
+
+      - name: Download offline Vosk speech model (~40MB, English)
+        run: |
+          mkdir -p android/app/src/main/assets/model-en-us
+          curl -L -o /tmp/vosk-model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q /tmp/vosk-model.zip -d /tmp/vosk-extract
+          mv /tmp/vosk-extract/vosk-model-small-en-us-0.15/* android/app/src/main/assets/model-en-us/
+          echo "--- model files staged ---"
+          ls -la android/app/src/main/assets/model-en-us/
+
       - name: Add RECORD_AUDIO permission
         run: |
           sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />#' android/app/src/main/AndroidManifest.xml
