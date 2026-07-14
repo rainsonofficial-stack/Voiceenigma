@@ -1,0 +1,70 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Prepare web assets (copies your existing app files into www/, injects the native speech shim automatically)
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+          cp manifest.json www/manifest.json
+          [ -f sw.js ] && cp sw.js www/sw.js || true
+          [ -f sw-purge.js ] && cp sw-purge.js www/sw-purge.js || true
+          cp large_dictionary.js www/large_dictionary.js
+          cp *.png www/ 2>/dev/null || true
+          cp speech-bridge-shim.js www/speech-bridge-shim.js
+          sed -i 's#<script src="./large_dictionary.js"></script>#<script src="./speech-bridge-shim.js"></script>\n    <script src="./large_dictionary.js"></script>#' www/index.html
+          echo "--- confirming shim was injected ---"
+          grep speech-bridge-shim www/index.html
+
+      - name: Initialize Capacitor
+        run: npx cap init "Voiceenigma" "com.rainenterprises.voiceenigma" --web-dir=www
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Install native SpeechBridge plugin
+        run: |
+          mkdir -p android/app/src/main/java/com/rainenterprises/voiceenigma
+          cp native-plugin/SpeechBridgePlugin.java android/app/src/main/java/com/rainenterprises/voiceenigma/SpeechBridgePlugin.java
+          cp native-plugin/MainActivity.java android/app/src/main/java/com/rainenterprises/voiceenigma/MainActivity.java
+
+      - name: Add RECORD_AUDIO permission
+        run: |
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />#' android/app/src/main/AndroidManifest.xml
+          grep RECORD_AUDIO android/app/src/main/AndroidManifest.xml
+
+      - name: Sync web assets into Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceenigma-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
