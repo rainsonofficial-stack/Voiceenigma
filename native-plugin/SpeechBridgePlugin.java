@@ -1,11 +1,7 @@
 package com.rainenterprises.voiceenigma;
 
 import android.Manifest;
-import android.content.Intent;
-import android.os.Bundle;
-import android.speech.RecognitionListener;
-import android.speech.RecognizerIntent;
-import android.speech.SpeechRecognizer;
+import android.util.Log;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -16,14 +12,26 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.PermissionState;
 
-import java.util.ArrayList;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.vosk.Model;
+import org.vosk.Recognizer;
+import org.vosk.android.RecognitionListener;
+import org.vosk.android.SpeechService;
+import org.vosk.android.StorageService;
 
 /**
- * Exposes Android's native SpeechRecognizer to the WebView as "SpeechBridge".
- * The JS-side shim (www/speech-bridge-shim.js) wraps this to look like the
- * standard browser SpeechRecognition API, so index.html's existing decode
- * logic (onresult/onend/onerror handling, restart backoff, watchdog) needs
- * no changes.
+ * Exposes Vosk's fully offline, continuously-streaming speech recognizer to
+ * the WebView as "SpeechBridge". Unlike Android's built-in SpeechRecognizer
+ * (utterance-based, always cycles off/on), Vosk's SpeechService keeps a
+ * single AudioRecord session running continuously -- there is no
+ * restart/reinit cycle at all while listening is active, so no speech gets
+ * dropped between sessions.
+ *
+ * The JS-side shim (www/speech-bridge-shim.js) is unchanged -- same method
+ * names (start/stop/abort) and same event names (start/partialResult/
+ * finalResult/error/end) as before, so index.html's decode logic needs no
+ * changes either.
  */
 @CapacitorPlugin(
     name = "SpeechBridge",
@@ -31,9 +39,12 @@ import java.util.ArrayList;
         @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone")
     }
 )
-public class SpeechBridgePlugin extends Plugin {
+public class SpeechBridgePlugin extends Plugin implements RecognitionListener {
 
-    private SpeechRecognizer recognizer;
+    private static final String TAG = "SpeechBridge";
+    private Model model;
+    private SpeechService speechService;
+    private PluginCall pendingStartCall;
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -41,13 +52,13 @@ public class SpeechBridgePlugin extends Plugin {
             requestPermissionForAlias("microphone", call, "micPermsCallback");
             return;
         }
-        startRecognizer(call);
+        beginOrResume(call);
     }
 
     @PermissionCallback
     private void micPermsCallback(PluginCall call) {
         if (getPermissionState("microphone") == PermissionState.GRANTED) {
-            startRecognizer(call);
+            beginOrResume(call);
         } else {
             JSObject err = new JSObject();
             err.put("error", "not-allowed");
@@ -56,91 +67,125 @@ public class SpeechBridgePlugin extends Plugin {
         }
     }
 
-    private void startRecognizer(PluginCall call) {
-        getActivity().runOnUiThread(() -> {
-            if (recognizer != null) {
-                try { recognizer.destroy(); } catch (Exception ignored) {}
-            }
-            recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
-            recognizer.setRecognitionListener(new RecognitionListener() {
-                @Override public void onReadyForSpeech(Bundle params) {
-                    notifyListeners("start", new JSObject());
-                }
-                @Override public void onBeginningOfSpeech() {}
-                @Override public void onRmsChanged(float rmsdB) {}
-                @Override public void onBufferReceived(byte[] buffer) {}
-                @Override public void onEndOfSpeech() {}
-
-                @Override public void onError(int error) {
-                    JSObject data = new JSObject();
-                    data.put("error", mapError(error));
-                    notifyListeners("error", data);
-                    notifyListeners("end", new JSObject());
-                }
-
-                @Override public void onResults(Bundle results) {
-                    emitResults(results, true);
-                    notifyListeners("end", new JSObject());
-                }
-
-                @Override public void onPartialResults(Bundle partialResults) {
-                    emitResults(partialResults, false);
-                }
-
-                @Override public void onEvent(int eventType, Bundle params) {}
-            });
-
-            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, call.getString("lang", "en-US"));
-            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-            intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getContext().getPackageName());
-            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
-            // Encourage a longer pause tolerance before auto-ending a session
-            intent.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 3000);
-            intent.putExtra("android.speech.extra.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 3000);
-            intent.putExtra("android.speech.extra.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS", 15000);
-
-            recognizer.startListening(intent);
+    private void beginOrResume(PluginCall call) {
+        if (speechService != null) {
+            // Model already loaded and service exists -- just resume listening.
+            speechService.startListening(this);
+            notifyListeners("start", new JSObject());
             call.resolve();
-        });
+            return;
+        }
+
+        if (model != null) {
+            startSpeechService(call);
+            return;
+        }
+
+        // First call: unpack the bundled model from assets/model-en-us into
+        // internal storage, then start. Only happens once per app install.
+        pendingStartCall = call;
+        StorageService.unpack(getContext(), "model-en-us", "model",
+            (unpackedModel) -> {
+                model = unpackedModel;
+                startSpeechService(pendingStartCall);
+            },
+            (exception) -> {
+                Log.e(TAG, "Failed to unpack Vosk model", exception);
+                JSObject err = new JSObject();
+                err.put("error", "model-load-failed");
+                notifyListeners("error", err);
+                if (pendingStartCall != null) {
+                    pendingStartCall.reject("Model load failed: " + exception.getMessage());
+                }
+            });
     }
 
-    private void emitResults(Bundle bundle, boolean isFinal) {
-        ArrayList<String> matches = bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-        if (matches == null || matches.isEmpty()) return;
+    private void startSpeechService(PluginCall call) {
+        try {
+            Recognizer rec = new Recognizer(model, 16000.0f);
+            speechService = new SpeechService(rec, 16000.0f);
+            speechService.startListening(this);
+            notifyListeners("start", new JSObject());
+            if (call != null) call.resolve();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start Vosk SpeechService", e);
+            JSObject err = new JSObject();
+            err.put("error", "unknown");
+            notifyListeners("error", err);
+            if (call != null) call.reject("Failed to start recognizer: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void onPartialResult(String hypothesis) {
+        String text = extractField(hypothesis, "partial");
+        if (text == null || text.trim().isEmpty()) return;
         JSObject data = new JSObject();
-        data.put("transcript", matches.get(0));
-        data.put("isFinal", isFinal);
-        notifyListeners(isFinal ? "finalResult" : "partialResult", data);
+        data.put("transcript", text);
+        data.put("isFinal", false);
+        notifyListeners("partialResult", data);
     }
 
-    private String mapError(int error) {
-        switch (error) {
-            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "not-allowed";
-            case SpeechRecognizer.ERROR_NO_MATCH: return "no-speech";
-            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "no-speech";
-            case SpeechRecognizer.ERROR_NETWORK: return "network";
-            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "network";
-            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "aborted";
-            default: return "unknown";
+    @Override
+    public void onResult(String hypothesis) {
+        String text = extractField(hypothesis, "text");
+        if (text == null || text.trim().isEmpty()) return;
+        JSObject data = new JSObject();
+        data.put("transcript", text);
+        data.put("isFinal", true);
+        notifyListeners("finalResult", data);
+    }
+
+    @Override
+    public void onFinalResult(String hypothesis) {
+        // Fired when stop()/cancel() flushes the last buffered utterance.
+        String text = extractField(hypothesis, "text");
+        if (text != null && !text.trim().isEmpty()) {
+            JSObject data = new JSObject();
+            data.put("transcript", text);
+            data.put("isFinal", true);
+            notifyListeners("finalResult", data);
+        }
+    }
+
+    @Override
+    public void onError(Exception exception) {
+        Log.e(TAG, "Vosk recognition error", exception);
+        JSObject data = new JSObject();
+        data.put("error", "unknown");
+        notifyListeners("error", data);
+    }
+
+    @Override
+    public void onTimeout() {
+        Log.w(TAG, "Vosk recognition timeout (unexpected -- no timeout is configured)");
+    }
+
+    private String extractField(String json, String field) {
+        try {
+            JSONObject obj = new JSONObject(json);
+            return obj.optString(field, "");
+        } catch (JSONException e) {
+            return null;
         }
     }
 
     @PluginMethod
     public void stop(PluginCall call) {
-        getActivity().runOnUiThread(() -> {
-            if (recognizer != null) recognizer.stopListening();
-            call.resolve();
-        });
+        if (speechService != null) {
+            speechService.stop();
+        }
+        notifyListeners("end", new JSObject());
+        call.resolve();
     }
 
     @PluginMethod
     public void abort(PluginCall call) {
-        getActivity().runOnUiThread(() -> {
-            if (recognizer != null) recognizer.cancel();
-            call.resolve();
-        });
+        if (speechService != null) {
+            speechService.cancel();
+        }
+        notifyListeners("end", new JSObject());
+        call.resolve();
     }
 }
 
