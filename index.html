@@ -585,14 +585,20 @@
 
                 // onerror: permission errors are fatal; others will be handled by onend/backoff
                 this.recognizer.onerror = (event) => {
-                    this.logStatus(`Voice Error (${event.error}).`, true);
-                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'permission-denied') {
-                        this.isListening = false;
-                        this.updateListeningUI(false);
-                        this.APP_STATE = 'AOD_LOCK'; 
-                        this.logStatus("Microphone permission denied. Listening disabled.", true);
-                    }
-                };
+    this.logStatus(`Voice Error (${event.error}).`, true);
+    const dbgWidget = document.getElementById('transcript-widget');
+    if (dbgWidget) {
+        const debugLine = `[ERR] ${event.error}${event.detail ? ': ' + event.detail : ''}`;
+        dbgWidget.textContent = dbgWidget.textContent.includes("Ready. Double-tap")
+            ? debugLine
+            : dbgWidget.textContent + '\n' + debugLine;
+        dbgWidget.scrollTop = dbgWidget.scrollHeight;
+    }
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'permission-denied') {
+        this.isListening = false; this.updateListeningUI(false); this.APP_STATE = 'AOD_LOCK'; 
+        this.logStatus("Microphone permission denied. Listening disabled.", true);
+    }
+};
 
                 // Small watchdog to detect silent stalls (if recognizer hangs without onend)
                 if (!this._watchdogTimer) {
