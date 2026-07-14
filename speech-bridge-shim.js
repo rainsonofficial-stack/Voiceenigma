@@ -53,7 +53,7 @@
             if (self.onend) self.onend();
         }));
         this._handles.push(Native.addListener('error', function (data) {
-            if (self.onerror) self.onerror({ error: data.error });
+            if (self.onerror) self.onerror({ error: data.error, detail: data.detail });
         }));
     };
 
@@ -102,4 +102,3 @@
     window.SpeechRecognition = NativeSpeechRecognition;
     window.webkitSpeechRecognition = NativeSpeechRecognition;
 })();
-
