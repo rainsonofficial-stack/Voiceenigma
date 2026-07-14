@@ -93,10 +93,16 @@ public class SpeechBridgePlugin extends Plugin implements RecognitionListener {
                 Log.e(TAG, "Failed to unpack Vosk model", exception);
                 JSObject err = new JSObject();
                 err.put("error", "model-load-failed");
+                err.put("detail", String.valueOf(exception.getMessage()));
                 notifyListeners("error", err);
+                // IMPORTANT: resolve (not reject) and emit 'end' so the JS side's
+                // existing onend-triggered backoff retry actually fires. Rejecting
+                // here made the JS shim collapse this into a permanent 'not-allowed'
+                // failure with no retry, which is why the mic never came on.
                 if (pendingStartCall != null) {
-                    pendingStartCall.reject("Model load failed: " + exception.getMessage());
+                    pendingStartCall.resolve();
                 }
+                notifyListeners("end", new JSObject());
             });
     }
 
@@ -111,8 +117,12 @@ public class SpeechBridgePlugin extends Plugin implements RecognitionListener {
             Log.e(TAG, "Failed to start Vosk SpeechService", e);
             JSObject err = new JSObject();
             err.put("error", "unknown");
+            err.put("detail", String.valueOf(e.getMessage()));
             notifyListeners("error", err);
-            if (call != null) call.reject("Failed to start recognizer: " + e.getMessage());
+            // Same reasoning as above: resolve + emit 'end' so JS retries instead
+            // of silently stalling.
+            if (call != null) call.resolve();
+            notifyListeners("end", new JSObject());
         }
     }
 
@@ -153,7 +163,11 @@ public class SpeechBridgePlugin extends Plugin implements RecognitionListener {
         Log.e(TAG, "Vosk recognition error", exception);
         JSObject data = new JSObject();
         data.put("error", "unknown");
+        data.put("detail", String.valueOf(exception.getMessage()));
         notifyListeners("error", data);
+        // Same fix as the startup paths: emit 'end' so the JS side's existing
+        // retry logic restarts listening instead of silently stalling.
+        notifyListeners("end", new JSObject());
     }
 
     @Override
@@ -188,4 +202,3 @@ public class SpeechBridgePlugin extends Plugin implements RecognitionListener {
         call.resolve();
     }
 }
-
