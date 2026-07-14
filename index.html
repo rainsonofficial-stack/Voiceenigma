@@ -335,6 +335,14 @@
                 // Teens only provide the D1 number
                 'TEN': 1, 'ELEVEN': 1, 'TWELVE': 2, 'THIRTEEN': 3, 'FOURTEEN': 4,
                 'FIFTEEN': 5, 'SIXTEEN': 6, 'SEVENTEEN': 7, 'EIGHTEEN': 8, 'NINETEEN': 9,
+
+                // Tens words -- lets compound numbers like "thirty one" or
+                // "six hundred thirty one" parse correctly into individual
+                // digits. Vosk transcribes these as literal words (no
+                // auto-digit conversion like the browser sometimes did),
+                // so these entries are needed for reliable decoding.
+                'TWENTY': 2, 'THIRTY': 3, 'FORTY': 4, 'FIFTY': 5,
+                'SIXTY': 6, 'SEVENTY': 7, 'EIGHTY': 8, 'NINETY': 9,
                 
                 // Homophones and common phonetic errors
                 'WAN': 1, 'WON': 1, 'WANT': 1, 'WAND': 1, 'WONDER': 1, 
