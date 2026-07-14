@@ -64,6 +64,10 @@ jobs:
           curl -L -o /tmp/vosk-model.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
           unzip -q /tmp/vosk-model.zip -d /tmp/vosk-extract
           mv /tmp/vosk-extract/vosk-model-small-en-us-0.15/* android/app/src/main/assets/model-en-us/
+          # Vosk's downloadable models don't ship a "uuid" file, but
+          # StorageService.unpack() requires one to exist or it throws
+          # "Failed to unpack the model: model-en-us/uuid". Generate one.
+          python3 -c "import uuid; print(uuid.uuid4())" > android/app/src/main/assets/model-en-us/uuid
           echo "--- model files staged ---"
           ls -la android/app/src/main/assets/model-en-us/
 
